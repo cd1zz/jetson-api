@@ -1,0 +1,22 @@
+[Unit]
+Description=Jetson LLM API Service
+After=network.target llama-deepseek.service llama-qwen.service
+Wants=llama-deepseek.service llama-qwen.service
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%HOME%/jetson-api
+Environment="PATH=%HOME%/jetson-api/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=%HOME%/jetson-api/.venv/bin/uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port 9000 \
+    --workers 1 \
+    --log-level info
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
