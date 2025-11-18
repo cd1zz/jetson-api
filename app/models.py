@@ -1,6 +1,6 @@
 """Pydantic models for OpenAI-compatible API requests and responses."""
 
-from typing import List, Literal, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
@@ -11,11 +11,33 @@ from pydantic import BaseModel, Field
 Role = Literal["system", "user", "assistant"]
 
 
+# ============================================================================
+# Vision Support Models
+# ============================================================================
+
+class ImageUrl(BaseModel):
+    """Image URL for vision requests."""
+
+    url: str = Field(..., description="URL or data URI of the image")
+    detail: Optional[str] = Field("auto", description="Image detail level")
+
+
+class ContentPart(BaseModel):
+    """A part of message content (text or image)."""
+
+    type: Literal["text", "image_url"]
+    text: Optional[str] = None
+    image_url: Optional[ImageUrl] = None
+
+
 class ChatMessage(BaseModel):
-    """A single chat message."""
+    """A single chat message (supports both text and vision)."""
 
     role: Role
-    content: str
+    content: Union[str, List[ContentPart]] = Field(
+        ...,
+        description="Message content (string for text-only, list for vision)"
+    )
 
 
 class ChatCompletionRequest(BaseModel):

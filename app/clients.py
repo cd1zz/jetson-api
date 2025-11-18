@@ -31,7 +31,7 @@ async def call_llama_server(req: ChatCompletionRequest) -> ChatCompletionRespons
     Raises:
         httpx.HTTPError: If the backend request fails
     """
-    base_url = resolve_model_base_url(req.model)
+    base_url = resolve_model_base_url(req.model).rstrip('/')
     url = f"{base_url}/completion"
 
     # Format messages into prompt using model-specific template
@@ -92,7 +92,7 @@ async def stream_llama_server(req: ChatCompletionRequest) -> AsyncIterator[str]:
     Raises:
         httpx.HTTPError: If the backend request fails
     """
-    base_url = resolve_model_base_url(req.model)
+    base_url = resolve_model_base_url(req.model).rstrip('/')
     url = f"{base_url}/completion"
 
     # Format messages into prompt
@@ -147,8 +147,8 @@ async def stream_llama_server(req: ChatCompletionRequest) -> AsyncIterator[str]:
                                 )
                             ],
                         )
-                        yield f"data: {chunk.model_dump_json()}\n\n"
-                        yield "data: [DONE]\n\n"
+                        yield chunk.model_dump_json()
+                        yield "[DONE]"
                         break
 
                     # Extract content delta
@@ -167,7 +167,7 @@ async def stream_llama_server(req: ChatCompletionRequest) -> AsyncIterator[str]:
                                 )
                             ],
                         )
-                        yield f"data: {chunk.model_dump_json()}\n\n"
+                        yield chunk.model_dump_json()
 
 
 async def check_backend_health(base_url: str) -> Dict[str, Any]:
@@ -180,6 +180,7 @@ async def check_backend_health(base_url: str) -> Dict[str, Any]:
     Returns:
         Health status dictionary
     """
+    base_url = base_url.rstrip('/')
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             # Try to hit the /health endpoint (if available) or /props
@@ -216,3 +217,163 @@ def _map_stop_reason(llama_reason: str) -> str:
         "eos": "stop",
     }
     return mapping.get(llama_reason, "stop")
+
+
+# ============================================================================
+# Vision Model Client Functions
+# ============================================================================
+
+async def call_llama_server_vision(
+    req: ChatCompletionRequest
+) -> ChatCompletionResponse:
+    """
+    Call llama-server for vision model completion.
+    Vision models use the /v1/chat/completions endpoint with structured messages.
+
+    Args:
+        req: Chat completion request with vision content
+
+    Returns:
+        Chat completion response
+
+    Raises:
+        httpx.HTTPError: If the backend request fails
+    """
+    base_url = resolve_model_base_url(req.model).rstrip('/')
+    url = f"{base_url}/v1/chat/completions"
+
+    # Convert messages to dict format for llama.cpp
+    messages_payload = []
+    for msg in req.messages:
+        if isinstance(msg.content, str):
+            # Simple text message
+            messages_payload.append({
+                "role": msg.role,
+                "content": msg.content
+            })
+        else:
+            # Structured content with images
+            content_parts = []
+            for part in msg.content:
+                if part.type == "text":
+                    content_parts.append({"type": "text", "text": part.text})
+                elif part.type == "image_url" and part.image_url:
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": part.image_url.url}
+                    })
+            messages_payload.append({
+                "role": msg.role,
+                "content": content_parts
+            })
+
+    # Build request payload
+    payload: Dict[str, Any] = {
+        "messages": messages_payload,
+        "temperature": req.temperature,
+        "max_tokens": req.max_tokens or 512,
+        "top_p": req.top_p,
+        "stream": False,
+    }
+
+    if req.stop:
+        payload["stop"] = req.stop
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+    # Parse OpenAI-compatible response from llama.cpp
+    choice = data["choices"][0]
+    message_content = choice["message"]["content"]
+
+    return ChatCompletionResponse(
+        id=data.get("id", f"chatcmpl-{uuid.uuid4().hex[:24]}"),
+        created=data.get("created", int(time.time())),
+        model=req.model,
+        choices=[
+            ChatCompletionChoice(
+                index=0,
+                message=ChatMessage(role="assistant", content=message_content),
+                finish_reason=choice.get("finish_reason", "stop"),
+            )
+        ],
+        usage=Usage(
+            prompt_tokens=data.get("usage", {}).get("prompt_tokens", 0),
+            completion_tokens=data.get("usage", {}).get("completion_tokens", 0),
+            total_tokens=data.get("usage", {}).get("total_tokens", 0),
+        ),
+    )
+
+
+async def stream_llama_server_vision(
+    req: ChatCompletionRequest
+) -> AsyncIterator[str]:
+    """
+    Stream completion from llama-server vision model using SSE.
+
+    Args:
+        req: Chat completion request with vision content
+
+    Yields:
+        SSE-formatted chunks as strings
+
+    Raises:
+        httpx.HTTPError: If the backend request fails
+    """
+    base_url = resolve_model_base_url(req.model).rstrip('/')
+    url = f"{base_url}/v1/chat/completions"
+
+    # Convert messages to dict format
+    messages_payload = []
+    for msg in req.messages:
+        if isinstance(msg.content, str):
+            messages_payload.append({"role": msg.role, "content": msg.content})
+        else:
+            content_parts = []
+            for part in msg.content:
+                if part.type == "text":
+                    content_parts.append({"type": "text", "text": part.text})
+                elif part.type == "image_url" and part.image_url:
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": part.image_url.url}
+                    })
+            messages_payload.append({"role": msg.role, "content": content_parts})
+
+    # Build streaming request payload
+    payload: Dict[str, Any] = {
+        "messages": messages_payload,
+        "temperature": req.temperature,
+        "max_tokens": req.max_tokens or 512,
+        "top_p": req.top_p,
+        "stream": True,
+    }
+
+    if req.stop:
+        payload["stop"] = req.stop
+
+    request_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+    created_at = int(time.time())
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        async with client.stream("POST", url, json=payload) as response:
+            response.raise_for_status()
+
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+
+                # llama.cpp vision sends SSE format: "data: {...}"
+                # EventSourceResponse will add "data: " prefix, so we strip it here
+                if line.startswith("data: "):
+                    data_str = line[6:]  # Remove "data: " prefix
+
+                    # Check for done signal
+                    if data_str.strip() == "[DONE]":
+                        yield "[DONE]"
+                        break
+
+                    # Yield just the JSON content (EventSourceResponse adds "data: ")
+                    yield data_str

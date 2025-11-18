@@ -5,7 +5,7 @@ from .config import settings
 from .models import ChatMessage
 
 
-ModelName = Literal["deepseek-r1-7b", "qwen2.5-7b-instruct"]
+ModelName = Literal["deepseek-r1-7b", "qwen2.5-7b-instruct", "minicpm-v-2.5", "qwen2.5-vl-7b"]
 
 
 AVAILABLE_MODELS = {
@@ -13,11 +13,29 @@ AVAILABLE_MODELS = {
         "name": "deepseek-r1-7b",
         "base_url": None,  # Set dynamically from settings
         "description": "DeepSeek R1 distilled on Qwen 7B (Q4_K_M quantization)",
+        "modality": "text",
+        "supports_vision": False,
     },
     "qwen2.5-7b-instruct": {
         "name": "qwen2.5-7b-instruct",
         "base_url": None,  # Set dynamically from settings
         "description": "Qwen 2.5 7B Instruct (Q4_K_M quantization)",
+        "modality": "text",
+        "supports_vision": False,
+    },
+    "minicpm-v-2.5": {
+        "name": "minicpm-v-2.5",
+        "base_url": None,  # Set dynamically from settings
+        "description": "MiniCPM-V 2.5 vision-language model (Q4_K_M quantization)",
+        "modality": "multimodal",
+        "supports_vision": True,
+    },
+    "qwen2.5-vl-7b": {
+        "name": "qwen2.5-vl-7b",
+        "base_url": None,  # Set dynamically from settings
+        "description": "Qwen 2.5 VL 7B vision-language model (Q4_K quantization)",
+        "modality": "multimodal",
+        "supports_vision": True,
     },
 }
 
@@ -27,6 +45,8 @@ def get_available_models() -> dict:
     models = AVAILABLE_MODELS.copy()
     models["deepseek-r1-7b"]["base_url"] = str(settings.deepseek_base_url)
     models["qwen2.5-7b-instruct"]["base_url"] = str(settings.qwen_base_url)
+    models["minicpm-v-2.5"]["base_url"] = str(settings.minicpm_v_base_url)
+    models["qwen2.5-vl-7b"]["base_url"] = str(settings.qwen2_5_vl_base_url)
     return models
 
 
@@ -47,7 +67,45 @@ def resolve_model_base_url(model: str) -> str:
         return str(settings.deepseek_base_url)
     if model == "qwen2.5-7b-instruct":
         return str(settings.qwen_base_url)
+    if model == "minicpm-v-2.5":
+        return str(settings.minicpm_v_base_url)
+    if model == "qwen2.5-vl-7b":
+        return str(settings.qwen2_5_vl_base_url)
     raise ValueError(f"Unsupported model: {model}")
+
+
+def is_vision_model(model: str) -> bool:
+    """
+    Check if a model supports vision/image inputs.
+
+    Args:
+        model: Model identifier
+
+    Returns:
+        True if model supports vision, False otherwise
+    """
+    models = get_available_models()
+    return models.get(model, {}).get("supports_vision", False)
+
+
+def detect_vision_content(messages: List[ChatMessage]) -> bool:
+    """
+    Detect if messages contain image content.
+
+    Args:
+        messages: List of chat messages
+
+    Returns:
+        True if any message contains images, False otherwise
+    """
+    from .models import ContentPart
+
+    for msg in messages:
+        if isinstance(msg.content, list):
+            for part in msg.content:
+                if isinstance(part, ContentPart) and part.type == "image_url":
+                    return True
+    return False
 
 
 def format_chat_prompt(messages: List[ChatMessage], model: str) -> str:

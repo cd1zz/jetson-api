@@ -16,9 +16,15 @@ from .models import (
     Model,
     HealthResponse,
 )
-from .clients import call_llama_server, stream_llama_server, check_backend_health
+from .clients import (
+    call_llama_server,
+    stream_llama_server,
+    call_llama_server_vision,
+    stream_llama_server_vision,
+    check_backend_health,
+)
 from .deps import verify_api_key
-from .routing import get_available_models
+from .routing import get_available_models, is_vision_model, detect_vision_content
 
 
 # Configure logging
@@ -119,10 +125,10 @@ async def chat_completions(
     _: None = Depends(verify_api_key),
 ):
     """
-    Create a chat completion.
-    OpenAI-compatible endpoint supporting both streaming and non-streaming.
+    Unified chat completion endpoint.
+    Supports both text-only and vision models with auto-detection.
     """
-    # Validate model
+    # Validate model exists
     available_models = get_available_models()
     if request.model not in available_models:
         raise HTTPException(
@@ -130,17 +136,40 @@ async def chat_completions(
             detail=f"Model '{request.model}' not found. Available models: {list(available_models.keys())}",
         )
 
+    # Detect vision model or vision content
+    model_supports_vision = is_vision_model(request.model)
+    has_vision_content = detect_vision_content(request.messages)
+
+    # Validate compatibility
+    if has_vision_content and not model_supports_vision:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model}' does not support vision/image inputs. "
+                   f"Please use a vision-capable model like 'minicpm-v-2.5'.",
+        )
+
     try:
-        if request.stream:
-            # Return streaming response
-            return EventSourceResponse(
-                stream_llama_server(request),
-                media_type="text/event-stream",
-            )
+        # Route to appropriate handler based on model capabilities
+        if model_supports_vision:
+            # Use vision-specific handlers
+            if request.stream:
+                return EventSourceResponse(
+                    stream_llama_server_vision(request),
+                    media_type="text/event-stream",
+                )
+            else:
+                response = await call_llama_server_vision(request)
+                return response
         else:
-            # Return regular response
-            response = await call_llama_server(request)
-            return response
+            # Use text-only handlers
+            if request.stream:
+                return EventSourceResponse(
+                    stream_llama_server(request),
+                    media_type="text/event-stream",
+                )
+            else:
+                response = await call_llama_server(request)
+                return response
 
     except Exception as e:
         logger.error(f"Error processing completion: {e}", exc_info=True)

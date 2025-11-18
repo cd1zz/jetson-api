@@ -1,0 +1,24 @@
+[Unit]
+Description=llama.cpp server for Qwen2.5-VL-7B (Vision)
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%HOME%/llama.cpp
+Environment="CUDA_VISIBLE_DEVICES=0"
+ExecStart=%HOME%/llama.cpp/build/bin/llama-server \
+    --model %HOME%/models/qwen2.5-vl/Qwen2.5-VL-7B-Instruct-q4_k_m.gguf \
+    --mmproj %HOME%/models/qwen2.5-vl/Qwen2.5-VL-7B-Instruct-mmproj-f16.gguf \
+    --ctx-size 4096 \
+    --port 8084 \
+    --n-gpu-layers 99 \
+    --threads %NPROC% \
+    --host 127.0.0.1
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
