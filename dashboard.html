@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jetson LLM Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #10b981; }
+        .status-offline { background-color: #ef4444; }
+        .status-checking { background-color: #f59e0b; }
+
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .metric-bar {
+            height: 8px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .metric-fill {
+            height: 100%;
+            background: white;
+            transition: width 0.5s ease;
+        }
+
+        pre code {
+            display: block;
+            padding: 1rem;
+            background: #1e293b;
+            border-radius: 0.5rem;
+            color: #e2e8f0;
+            overflow-x: auto;
+        }
+
+        .response-box {
+            min-height: 200px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .image-preview {
+            max-width: 300px;
+            max-height: 300px;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-4xl font-bold text-gray-900 mb-2">Jetson LLM Dashboard</h1>
+            <p class="text-gray-600">Monitor and test your local LLM models</p>
+        </div>
+
+        <!-- System Metrics -->
+        <div id="systemMetrics" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <!-- GPU Metric -->
+            <div class="metric-card p-6 rounded-lg shadow-lg text-white">
+                <div class="flex justify-between items-start mb-3">
+                    <h3 class="text-sm font-semibold uppercase opacity-90">GPU</h3>
+                    <span id="gpuTemp" class="text-2xl font-bold">--°C</span>
+                </div>
+                <div class="mb-2">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Utilization</span>
+                        <span id="gpuUtil">--%</span>
+                    </div>
+                    <div class="metric-bar">
+                        <div id="gpuUtilBar" class="metric-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="text-sm opacity-90">
+                    <span id="gpuMem">-- / -- MB</span>
+                </div>
+            </div>
+
+            <!-- CPU Metric -->
+            <div class="metric-card p-6 rounded-lg shadow-lg text-white" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h3 class="text-sm font-semibold uppercase opacity-90 mb-3">CPU</h3>
+                <div class="mb-2">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Utilization</span>
+                        <span id="cpuUtil">--%</span>
+                    </div>
+                    <div class="metric-bar">
+                        <div id="cpuUtilBar" class="metric-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RAM Metric -->
+            <div class="metric-card p-6 rounded-lg shadow-lg text-white" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <h3 class="text-sm font-semibold uppercase opacity-90 mb-3">RAM</h3>
+                <div class="mb-2">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Usage</span>
+                        <span id="ramUtil">--%</span>
+                    </div>
+                    <div class="metric-bar">
+                        <div id="ramUtilBar" class="metric-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="text-sm opacity-90">
+                    <span id="ramMem">-- / -- GB</span>
+                </div>
+            </div>
+
+            <!-- Disk Metric -->
+            <div class="metric-card p-6 rounded-lg shadow-lg text-white" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                <h3 class="text-sm font-semibold uppercase opacity-90 mb-3">Disk</h3>
+                <div class="mb-2">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Usage</span>
+                        <span id="diskUtil">--%</span>
+                    </div>
+                    <div class="metric-bar">
+                        <div id="diskUtilBar" class="metric-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="text-sm opacity-90">
+                    <span id="diskMem">-- / -- GB</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Model Status -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">Model Status</h2>
+            <div id="modelStatus" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Models will be populated here -->
+            </div>
+        </div>
+
+        <!-- Interactive Chat Interface -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-2xl font-bold mb-4">Test Model</h2>
+
+            <!-- Model Selection -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Select Model</label>
+                <select id="modelSelect" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="">Loading models...</option>
+                </select>
+            </div>
+
+            <!-- Image Upload (for vision models) -->
+            <div id="imageUploadSection" class="mb-4 hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Upload Image (Optional)</label>
+                <div class="flex items-center space-x-4">
+                    <input type="file" id="imageUpload" accept="image/*" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-lg file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100"/>
+                    <button id="clearImage" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 hidden">Clear</button>
+                </div>
+                <div id="imagePreview" class="mt-4 hidden">
+                    <img id="previewImg" class="image-preview border rounded-lg" alt="Preview">
+                </div>
+            </div>
+
+            <!-- Prompt Input -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
+                <textarea id="promptInput" rows="4" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Enter your prompt here..."></textarea>
+            </div>
+
+            <!-- Options -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Max Tokens</label>
+                    <input type="number" id="maxTokens" value="512" min="1" max="4096" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Temperature</label>
+                    <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                </div>
+                <div class="flex items-end">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="streamToggle" class="mr-2">
+                        <span class="text-sm font-medium text-gray-700">Stream Response</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Send Button -->
+            <button id="sendButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200">
+                Send
+            </button>
+
+            <!-- Response Area -->
+            <div class="mt-6">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-lg font-semibold">Response</h3>
+                    <div class="text-sm text-gray-600">
+                        <span id="tokenStats" class="hidden">
+                            Tokens: <span id="promptTokens">0</span> + <span id="completionTokens">0</span> = <span id="totalTokens">0</span>
+                        </span>
+                    </div>
+                </div>
+                <div id="responseBox" class="response-box bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p class="text-gray-500 italic">Response will appear here...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_KEY = 'change-me-to-a-secure-key';  // Update this to match your .env file
+        const API_BASE = '';  // Empty for same origin
+
+        // State
+        let models = {};
+        let selectedImage = null;
+        let selectedImageData = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadModels();
+            updateSystemMetrics();
+            checkModelHealth();
+
+            // Refresh metrics every 3 seconds
+            setInterval(updateSystemMetrics, 3000);
+
+            // Check model health every 10 seconds
+            setInterval(checkModelHealth, 10000);
+
+            // Event listeners
+            document.getElementById('modelSelect').addEventListener('change', onModelChange);
+            document.getElementById('imageUpload').addEventListener('change', onImageSelected);
+            document.getElementById('clearImage').addEventListener('click', clearImage);
+            document.getElementById('sendButton').addEventListener('click', sendRequest);
+        });
+
+        // Load available models
+        async function loadModels() {
+            try {
+                const response = await fetch(`${API_BASE}/v1/models`, {
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`
+                    }
+                });
+                const data = await response.json();
+
+                models = {};
+                data.data.forEach(model => {
+                    models[model.id] = model;
+                });
+
+                // Populate model select
+                const select = document.getElementById('modelSelect');
+                select.innerHTML = '<option value="">Select a model...</option>';
+                data.data.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.id;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading models:', error);
+            }
+        }
+
+        // Check model health
+        async function checkModelHealth() {
+            const statusDiv = document.getElementById('modelStatus');
+
+            try {
+                const response = await fetch(`${API_BASE}/v1/models`, {
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`
+                    }
+                });
+                const data = await response.json();
+
+                statusDiv.innerHTML = '';
+                data.data.forEach(model => {
+                    const card = document.createElement('div');
+                    card.className = 'border border-gray-200 rounded-lg p-4';
+                    card.innerHTML = `
+                        <div class="flex items-center mb-2">
+                            <span class="status-dot status-online"></span>
+                            <span class="font-semibold">${model.id}</span>
+                        </div>
+                        <p class="text-sm text-gray-600">${getModelDescription(model.id)}</p>
+                    `;
+                    statusDiv.appendChild(card);
+                });
+            } catch (error) {
+                console.error('Error checking model health:', error);
+            }
+        }
+
+        function getModelDescription(modelId) {
+            const descriptions = {
+                'deepseek-r1-7b': 'Text - DeepSeek R1 7B',
+                'qwen2.5-7b-instruct': 'Text - Qwen 2.5 7B',
+                'minicpm-v-2.5': 'Vision - MiniCPM-V 2.5',
+                'qwen2.5-vl-7b': 'Vision - Qwen 2.5 VL 7B'
+            };
+            return descriptions[modelId] || 'LLM Model';
+        }
+
+        // Update system metrics
+        async function updateSystemMetrics() {
+            try {
+                const response = await fetch(`${API_BASE}/system/stats`);
+                const data = await response.json();
+
+                // GPU
+                document.getElementById('gpuTemp').textContent = `${data.gpu.temperature_celsius}°C`;
+                document.getElementById('gpuUtil').textContent = `${data.gpu.utilization_percent}%`;
+                document.getElementById('gpuUtilBar').style.width = `${data.gpu.utilization_percent}%`;
+                document.getElementById('gpuMem').textContent = `${data.gpu.memory_used_mb} / ${data.gpu.memory_total_mb} MB`;
+
+                // CPU
+                document.getElementById('cpuUtil').textContent = `${data.cpu.utilization_percent}%`;
+                document.getElementById('cpuUtilBar').style.width = `${data.cpu.utilization_percent}%`;
+
+                // RAM
+                const ramUsedGB = (data.memory.used_mb / 1024).toFixed(1);
+                const ramTotalGB = (data.memory.total_mb / 1024).toFixed(1);
+                document.getElementById('ramUtil').textContent = `${data.memory.utilization_percent}%`;
+                document.getElementById('ramUtilBar').style.width = `${data.memory.utilization_percent}%`;
+                document.getElementById('ramMem').textContent = `${ramUsedGB} / ${ramTotalGB} GB`;
+
+                // Disk
+                document.getElementById('diskUtil').textContent = `${data.disk.utilization_percent}%`;
+                document.getElementById('diskUtilBar').style.width = `${data.disk.utilization_percent}%`;
+                document.getElementById('diskMem').textContent = `${data.disk.used_gb} / ${data.disk.total_gb} GB`;
+            } catch (error) {
+                console.error('Error updating system metrics:', error);
+            }
+        }
+
+        // Model selection handler
+        function onModelChange(e) {
+            const modelId = e.target.value;
+            const isVision = modelId.includes('minicpm-v') || modelId.includes('vl');
+
+            const imageSection = document.getElementById('imageUploadSection');
+            if (isVision) {
+                imageSection.classList.remove('hidden');
+            } else {
+                imageSection.classList.add('hidden');
+                clearImage();
+            }
+        }
+
+        // Image selection handler
+        function onImageSelected(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            selectedImage = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                selectedImageData = e.target.result;
+                document.getElementById('previewImg').src = selectedImageData;
+                document.getElementById('imagePreview').classList.remove('hidden');
+                document.getElementById('clearImage').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Clear image
+        function clearImage() {
+            selectedImage = null;
+            selectedImageData = null;
+            document.getElementById('imageUpload').value = '';
+            document.getElementById('imagePreview').classList.add('hidden');
+            document.getElementById('clearImage').classList.add('hidden');
+        }
+
+        // Send request
+        async function sendRequest() {
+            const modelId = document.getElementById('modelSelect').value;
+            const prompt = document.getElementById('promptInput').value;
+            const maxTokens = parseInt(document.getElementById('maxTokens').value);
+            const temperature = parseFloat(document.getElementById('temperature').value);
+            const stream = document.getElementById('streamToggle').checked;
+
+            if (!modelId || !prompt) {
+                alert('Please select a model and enter a prompt');
+                return;
+            }
+
+            const sendButton = document.getElementById('sendButton');
+            sendButton.disabled = true;
+            sendButton.textContent = 'Sending...';
+
+            const responseBox = document.getElementById('responseBox');
+            responseBox.innerHTML = '<p class="text-gray-500">Waiting for response...</p>';
+
+            try {
+                // Build messages
+                const messages = [];
+
+                if (selectedImageData) {
+                    messages.push({
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: selectedImageData } }
+                        ]
+                    });
+                } else {
+                    messages.push({
+                        role: 'user',
+                        content: prompt
+                    });
+                }
+
+                const requestBody = {
+                    model: modelId,
+                    messages: messages,
+                    max_tokens: maxTokens,
+                    temperature: temperature,
+                    stream: stream
+                };
+
+                if (stream) {
+                    await handleStreamingResponse(requestBody);
+                } else {
+                    await handleNonStreamingResponse(requestBody);
+                }
+            } catch (error) {
+                responseBox.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            } finally {
+                sendButton.disabled = false;
+                sendButton.textContent = 'Send';
+            }
+        }
+
+        async function handleNonStreamingResponse(requestBody) {
+            const response = await fetch(`${API_BASE}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_KEY}`
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const content = data.choices[0].message.content;
+
+            document.getElementById('responseBox').innerHTML = `<pre><code>${escapeHtml(content)}</code></pre>`;
+
+            // Update token stats
+            if (data.usage) {
+                document.getElementById('tokenStats').classList.remove('hidden');
+                document.getElementById('promptTokens').textContent = data.usage.prompt_tokens;
+                document.getElementById('completionTokens').textContent = data.usage.completion_tokens;
+                document.getElementById('totalTokens').textContent = data.usage.total_tokens;
+            }
+        }
+
+        async function handleStreamingResponse(requestBody) {
+            const response = await fetch(`${API_BASE}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_KEY}`
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedText = '';
+
+            document.getElementById('responseBox').innerHTML = '<pre><code></code></pre>';
+            const codeElement = document.getElementById('responseBox').querySelector('code');
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') break;
+
+                        try {
+                            const parsed = JSON.parse(data);
+                            const delta = parsed.choices[0].delta;
+                            if (delta.content) {
+                                accumulatedText += delta.content;
+                                codeElement.textContent = accumulatedText;
+                            }
+                        } catch (e) {
+                            // Skip invalid JSON
+                        }
+                    }
+                }
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

@@ -5,10 +5,12 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from .config import settings
+from .system_monitor import get_system_stats
 from .models import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -53,18 +55,26 @@ app = FastAPI(
 )
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint with API information."""
-    return {
-        "name": "Jetson LLM API",
-        "version": "1.0.0",
-        "endpoints": {
-            "chat": "/v1/chat/completions",
-            "models": "/v1/models",
-            "health": "/health",
-        },
-    }
+    """Serve the dashboard HTML page."""
+    import os
+    dashboard_path = os.path.join(os.path.dirname(__file__), "..", "dashboard.html")
+    if os.path.exists(dashboard_path):
+        return FileResponse(dashboard_path)
+    else:
+        return HTMLResponse(
+            content="""
+            <html>
+                <body>
+                    <h1>Jetson LLM API</h1>
+                    <p>Dashboard not found. API is running at /v1/chat/completions</p>
+                    <p>Visit /docs for API documentation</p>
+                </body>
+            </html>
+            """,
+            status_code=200,
+        )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -176,6 +186,23 @@ async def chat_completions(
         raise HTTPException(
             status_code=500,
             detail=f"Error communicating with backend: {str(e)}",
+        )
+
+
+@app.get("/system/stats")
+async def system_stats():
+    """
+    Get system statistics (GPU, CPU, RAM, disk, temperatures).
+    No authentication required for monitoring endpoint.
+    """
+    try:
+        stats = get_system_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting system stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving system stats: {str(e)}",
         )
 
 
