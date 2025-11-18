@@ -143,6 +143,181 @@
             </div>
         </div>
 
+        <!-- API Reference -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">API Reference</h2>
+            <div class="space-y-4">
+                <div class="border-l-4 border-blue-500 pl-4">
+                    <h3 class="font-semibold text-lg mb-2">OpenAI-Compatible API</h3>
+                    <p class="text-gray-600 mb-2">This API implements the OpenAI chat completions format, making it compatible with OpenAI SDKs and tools.</p>
+                    <div class="bg-gray-50 p-3 rounded mt-2">
+                        <p class="text-sm"><strong>Base URL:</strong> <code class="bg-gray-200 px-2 py-1 rounded">http://localhost:9000</code></p>
+                        <p class="text-sm mt-1"><strong>Authentication:</strong> Bearer token via <code class="bg-gray-200 px-2 py-1 rounded">Authorization</code> header</p>
+                    </div>
+                </div>
+
+                <details class="border rounded-lg">
+                    <summary class="cursor-pointer p-4 font-semibold hover:bg-gray-50">POST /v1/chat/completions</summary>
+                    <div class="p-4 border-t space-y-3">
+                        <p class="text-sm text-gray-600">Send a chat completion request. Supports both text-only and vision models.</p>
+
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Request Body (Text):</p>
+                            <pre class="text-xs"><code>{
+  "model": "deepseek-r1-7b",
+  "messages": [
+    {"role": "user", "content": "Hello!"}
+  ],
+  "max_tokens": 512,
+  "temperature": 0.7,
+  "stream": false
+}</code></pre>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Request Body (Vision - with image):</p>
+                            <pre class="text-xs"><code>{
+  "model": "qwen2.5-vl-7b",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "Describe this image"},
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}
+      ]
+    }
+  ],
+  "max_tokens": 512,
+  "temperature": 0.7
+}</code></pre>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Response:</p>
+                            <pre class="text-xs"><code>{
+  "id": "chatcmpl-123",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "model": "deepseek-r1-7b",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": "Hello! How can I help you today?"
+    },
+    "finish_reason": "stop"
+  }],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 20,
+    "total_tokens": 30
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="border rounded-lg">
+                    <summary class="cursor-pointer p-4 font-semibold hover:bg-gray-50">GET /v1/models</summary>
+                    <div class="p-4 border-t space-y-3">
+                        <p class="text-sm text-gray-600">List all available models.</p>
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Response:</p>
+                            <pre class="text-xs"><code>{
+  "object": "list",
+  "data": [
+    {
+      "id": "deepseek-r1-7b",
+      "object": "model",
+      "created": 0,
+      "owned_by": "jetson-api"
+    }
+  ]
+}</code></pre>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="border rounded-lg">
+                    <summary class="cursor-pointer p-4 font-semibold hover:bg-gray-50">GET /health</summary>
+                    <div class="p-4 border-t space-y-3">
+                        <p class="text-sm text-gray-600">Check health status of all backend models.</p>
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Response:</p>
+                            <pre class="text-xs"><code>{
+  "status": "healthy",
+  "models": {
+    "deepseek-r1-7b": {
+      "base_url": "http://127.0.0.1:8081",
+      "status": "healthy",
+      "response_time_ms": 5.2
+    }
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="border rounded-lg">
+                    <summary class="cursor-pointer p-4 font-semibold hover:bg-gray-50">GET /system/stats</summary>
+                    <div class="p-4 border-t space-y-3">
+                        <p class="text-sm text-gray-600">Get real-time system metrics (GPU, CPU, RAM, Disk).</p>
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Response:</p>
+                            <pre class="text-xs"><code>{
+  "device_model": "NVIDIA Jetson AGX Orin",
+  "gpu": {
+    "utilization_percent": 45,
+    "memory_used_mb": 2048,
+    "memory_total_mb": 8192,
+    "temperature_celsius": 52
+  },
+  "cpu": {"utilization_percent": 30},
+  "memory": {
+    "used_mb": 12288,
+    "total_mb": 32768,
+    "utilization_percent": 37
+  },
+  "disk": {
+    "used_gb": 128.5,
+    "total_gb": 256.0,
+    "utilization_percent": 50
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </details>
+
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 class="font-semibold text-blue-900 mb-2">Using with OpenAI SDK (Python)</h4>
+                    <pre class="text-xs"><code>from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:9000/v1",
+    api_key="change-me-to-a-secure-key"
+)
+
+# Text completion
+response = client.chat.completions.create(
+    model="deepseek-r1-7b",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
+# Vision completion
+response = client.chat.completions.create(
+    model="qwen2.5-vl-7b",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What's in this image?"},
+            {"type": "image_url", "image_url": {"url": "path/to/image.jpg"}}
+        ]
+    }]
+)</code></pre>
+                </div>
+            </div>
+        </div>
+
         <!-- Interactive Chat Interface -->
         <div class="bg-white rounded-lg shadow-lg p-6">
             <h2 class="text-2xl font-bold mb-4">Test Model</h2>
@@ -157,7 +332,12 @@
 
             <!-- Image Upload (for vision models) -->
             <div id="imageUploadSection" class="mb-4 hidden">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Upload Image (Optional)</label>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <p class="text-sm text-blue-900">
+                        <strong>📷 Vision Model Selected:</strong> You can upload an image for analysis. Supported formats: JPG, PNG, WebP, GIF
+                    </p>
+                </div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Upload Image</label>
                 <div class="flex items-center space-x-4">
                     <input type="file" id="imageUpload" accept="image/*" class="block w-full text-sm text-gray-500
                         file:mr-4 file:py-2 file:px-4
@@ -168,7 +348,8 @@
                     <button id="clearImage" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 hidden">Clear</button>
                 </div>
                 <div id="imagePreview" class="mt-4 hidden">
-                    <img id="previewImg" class="image-preview border rounded-lg" alt="Preview">
+                    <p class="text-sm text-gray-600 mb-2">Image Preview:</p>
+                    <img id="previewImg" class="image-preview border rounded-lg shadow-sm" alt="Preview">
                 </div>
             </div>
 
