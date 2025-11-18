@@ -1,7 +1,7 @@
 [Unit]
-Description=Jetson LLM API Service
-After=network.target llama-deepseek.service llama-qwen.service
-Wants=llama-deepseek.service llama-qwen.service
+Description=Jetson LLM API Service (with Dashboard)
+After=network.target llama-deepseek.service llama-qwen.service llama-minicpm-v.service llama-qwen2.5-vl.service
+Wants=llama-deepseek.service llama-qwen.service llama-minicpm-v.service llama-qwen2.5-vl.service
 
 [Service]
 Type=simple
