@@ -184,6 +184,42 @@
             </div>
         </div>
 
+        <!-- Embeddings Queue Status -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-2xl font-bold mb-4">Embeddings Queue Status</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <!-- Slots Status -->
+                <div class="bg-gradient-to-br from-purple-500 to-pink-500 p-6 rounded-lg text-white">
+                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Active Slots</h3>
+                    <div class="text-4xl font-bold mb-2" id="queueSlots">-- / --</div>
+                    <div class="text-sm opacity-90">Processing requests</div>
+                </div>
+
+                <!-- Utilization -->
+                <div class="bg-gradient-to-br from-blue-500 to-cyan-500 p-6 rounded-lg text-white">
+                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Utilization</h3>
+                    <div class="text-4xl font-bold mb-2" id="queueUtil">--%</div>
+                    <div class="metric-bar">
+                        <div id="queueUtilBar" class="metric-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Capacity Status -->
+                <div class="bg-gradient-to-br from-green-500 to-teal-500 p-6 rounded-lg text-white">
+                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Capacity</h3>
+                    <div class="text-3xl font-bold mb-2" id="queueCapacity">Available</div>
+                    <div class="text-sm opacity-90" id="queueIdleSlots">-- slots idle</div>
+                </div>
+
+                <!-- Active Tasks -->
+                <div class="bg-gradient-to-br from-orange-500 to-red-500 p-6 rounded-lg text-white">
+                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Active Tasks</h3>
+                    <div class="text-4xl font-bold mb-2" id="queueTasks">0</div>
+                    <div class="text-sm opacity-90">Currently processing</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Model Status -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <h2 class="text-2xl font-bold mb-4">Model Status</h2>
@@ -564,10 +600,12 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
         document.addEventListener('DOMContentLoaded', () => {
             loadModels();
             updateSystemMetrics();
+            updateQueueStatus();
             checkModelHealth();
 
             // Refresh metrics every 3 seconds
             setInterval(updateSystemMetrics, 3000);
+            setInterval(updateQueueStatus, 3000);
 
             // Check model health every 10 seconds
             setInterval(checkModelHealth, 10000);
@@ -796,6 +834,40 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                 document.getElementById('diskMem').textContent = `${data.disk.used_gb} / ${data.disk.total_gb} GB`;
             } catch (error) {
                 console.error('Error updating system metrics:', error);
+            }
+        }
+
+        // Update queue status
+        async function updateQueueStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/queue-status`);
+                const data = await response.json();
+
+                // Active Slots
+                document.getElementById('queueSlots').textContent = `${data.busy_slots} / ${data.total_slots}`;
+
+                // Utilization
+                document.getElementById('queueUtil').textContent = `${data.utilization_percent}%`;
+                document.getElementById('queueUtilBar').style.width = `${data.utilization_percent}%`;
+
+                // Capacity Status
+                const capacityEl = document.getElementById('queueCapacity');
+                const idleSlotsEl = document.getElementById('queueIdleSlots');
+
+                if (data.at_capacity) {
+                    capacityEl.textContent = 'At Capacity';
+                    capacityEl.parentElement.className = 'bg-gradient-to-br from-red-500 to-orange-500 p-6 rounded-lg text-white';
+                } else {
+                    capacityEl.textContent = 'Available';
+                    capacityEl.parentElement.className = 'bg-gradient-to-br from-green-500 to-teal-500 p-6 rounded-lg text-white';
+                }
+
+                idleSlotsEl.textContent = `${data.idle_slots} slots idle`;
+
+                // Active Tasks
+                document.getElementById('queueTasks').textContent = data.active_tasks.length;
+            } catch (error) {
+                console.error('Error updating queue status:', error);
             }
         }
 
