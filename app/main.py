@@ -189,6 +189,24 @@ async def chat_completions(
                 response = await call_llama_server(request)
                 return response
 
+    except httpx.ReadTimeout:
+        logger.error(f"Timeout waiting for completion from {request.model} (max_tokens={request.max_tokens})")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Request timed out waiting for model response. The model may be taking longer than expected to generate {request.max_tokens or 'the requested'} tokens. Try reducing max_tokens or using streaming mode.",
+        )
+    except httpx.ConnectTimeout:
+        logger.error(f"Connection timeout to {request.model} backend")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not connect to model backend. The backend server may be down or overloaded.",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Backend returned error {e.response.status_code}: {e.response.text}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Backend server error: {e.response.status_code} - {e.response.text[:200]}",
+        )
     except Exception as e:
         logger.error(f"Error processing completion: {e}", exc_info=True)
         raise HTTPException(
@@ -209,6 +227,25 @@ async def create_embeddings(
     try:
         response = await call_llama_server_embeddings(request)
         return response
+    except httpx.ReadTimeout:
+        input_count = len(request.input) if isinstance(request.input, list) else 1
+        logger.error(f"Timeout generating embeddings for {input_count} input(s)")
+        raise HTTPException(
+            status_code=504,
+            detail=f"Request timed out generating embeddings for {input_count} input(s). The server may be at capacity. Check /api/queue-status to see current load.",
+        )
+    except httpx.ConnectTimeout:
+        logger.error(f"Connection timeout to embeddings backend")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not connect to embeddings backend. The backend server may be down.",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Embeddings backend returned error {e.response.status_code}: {e.response.text}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Embeddings backend error: {e.response.status_code} - {e.response.text[:200]}",
+        )
     except Exception as e:
         logger.error(f"Error processing embeddings: {e}", exc_info=True)
         raise HTTPException(
