@@ -37,10 +37,19 @@ cd ~
 
 ### 2. Set up Python environment
 
+**Note:** The production systemd services use `~/jetsonllm` as the venv path. For new installations, you can create a venv at that location or use `.venv` for development.
+
 ```bash
 cd ~/jetson-api
-python3 -m venv .venv
-source .venv/bin/activate
+
+# Option 1: Production venv location (recommended if using systemd services)
+python3 -m venv ~/jetsonllm
+source ~/jetsonllm/bin/activate
+
+# Option 2: Local development venv
+# python3 -m venv .venv
+# source .venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
@@ -98,7 +107,7 @@ cd ~/llama.cpp
 
 ```bash
 cd ~/jetson-api
-source .venv/bin/activate
+source ~/jetsonllm/bin/activate  # or: source .venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 9000
 ```
 
@@ -351,7 +360,9 @@ jetson-api/
 │   ├── models.py         # Pydantic models for requests/responses
 │   ├── routing.py        # Model routing and chat templates
 │   ├── clients.py        # llama-server HTTP client
-│   └── deps.py           # Authentication dependencies
+│   ├── deps.py           # Authentication dependencies
+│   ├── system_monitor.py # Jetson system metrics (GPU, CPU, RAM, temps)
+│   └── activity_logger.py # Request logging middleware
 ├── systemd/
 │   ├── llama-deepseek.service
 │   ├── llama-qwen.service
@@ -371,10 +382,25 @@ jetson-api/
 
 ## Available Models
 
+### Text Models
+
 | Model ID | Description | Port |
 |----------|-------------|------|
 | `deepseek-r1-7b` | DeepSeek R1 distilled on Qwen 7B (Q4_K_M) | 8081 |
 | `qwen2.5-7b-instruct` | Qwen 2.5 7B Instruct (Q4_K_M) | 8082 |
+
+### Vision Models (Multimodal)
+
+| Model ID | Description | Port |
+|----------|-------------|------|
+| `minicpm-v-2.5` | MiniCPM-V 2.5 vision-language model (Q4_K_M) | 8083 |
+| `qwen2.5-vl-7b` | Qwen 2.5 VL 7B vision-language model (Q4_K) | 8084 |
+
+### Embedding Models
+
+| Model ID | Description | Port |
+|----------|-------------|------|
+| `qwen3-embedding-8b` | Qwen3 Embedding 8B for vector embeddings (Q5_K_M, 4096 dims) | 8085 |
 
 ## Troubleshooting
 
@@ -418,7 +444,7 @@ If ports 8081, 8082, or 9000 are in use, update:
 ### Running tests
 
 ```bash
-source .venv/bin/activate
+source ~/jetsonllm/bin/activate  # or: source .venv/bin/activate
 pytest tests/
 ```
 
