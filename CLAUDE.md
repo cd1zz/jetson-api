@@ -51,6 +51,9 @@ curl -X POST http://localhost:9000/v1/embeddings \
   -H "Authorization: Bearer your-api-key-here" \
   -H "Content-Type: application/json" \
   -d '{"model": "qwen3-embedding-8b", "input": "Hello world"}'
+
+# Check queue status
+curl http://localhost:9000/api/queue-status
 ```
 
 ## Architecture
@@ -75,6 +78,7 @@ curl -X POST http://localhost:9000/v1/embeddings \
 - `/system/stats` - Real-time Jetson system metrics (GPU, CPU, RAM, disk, temperatures)
 - `/api/activity-logs` - Get recent API activity logs
 - `/api/activity-logs/clear` - Clear all activity logs (requires auth)
+- `/api/queue-status` - Monitor embeddings backend slot utilization and queue depth
 
 **`dashboard.html`** - Single-page web dashboard:
 - Real-time system metrics (updates every 3s)

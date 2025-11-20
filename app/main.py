@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+import httpx
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -272,6 +273,55 @@ async def clear_activity_logs(_: None = Depends(verify_api_key)):
         raise HTTPException(
             status_code=500,
             detail=f"Error clearing activity logs: {str(e)}",
+        )
+
+
+@app.get("/api/queue-status")
+async def get_queue_status():
+    """
+    Get queue status for the embeddings backend.
+    Shows slot utilization and processing status.
+    No authentication required for monitoring endpoint.
+    """
+    try:
+        from .config import settings
+
+        base_url = str(settings.qwen3_embedding_base_url).rstrip('/')
+        slots_url = f"{base_url}/slots"
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(slots_url)
+            response.raise_for_status()
+            slots_data = response.json()
+
+        # Parse slot information
+        total_slots = len(slots_data)
+        busy_slots = sum(1 for slot in slots_data if slot.get("is_processing", False))
+        idle_slots = total_slots - busy_slots
+
+        # Get active task IDs
+        active_tasks = [
+            slot.get("id_task")
+            for slot in slots_data
+            if slot.get("is_processing", False)
+        ]
+
+        return {
+            "backend": "qwen3-embedding-8b",
+            "backend_url": base_url,
+            "total_slots": total_slots,
+            "busy_slots": busy_slots,
+            "idle_slots": idle_slots,
+            "utilization_percent": round((busy_slots / total_slots * 100) if total_slots > 0 else 0, 1),
+            "at_capacity": busy_slots >= total_slots,
+            "active_tasks": active_tasks,
+            "slots": slots_data,
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving queue status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving queue status: {str(e)}",
         )
 
 

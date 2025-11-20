@@ -274,6 +274,30 @@ Response:
 }
 ```
 
+#### Queue Status
+
+Monitor embeddings backend slot utilization to prevent timeouts:
+
+```bash
+curl http://YOUR_JETSON_IP:9000/api/queue-status
+```
+
+Response:
+```json
+{
+  "backend": "qwen3-embedding-8b",
+  "backend_url": "http://127.0.0.1:8085",
+  "total_slots": 4,
+  "busy_slots": 0,
+  "idle_slots": 4,
+  "utilization_percent": 0.0,
+  "at_capacity": false,
+  "active_tasks": []
+}
+```
+
+Use this endpoint to check server capacity before sending large embedding batches. When `at_capacity` is true or `busy_slots` is high, consider waiting before sending more requests to avoid timeouts.
+
 ## Using with OpenAI Python SDK
 
 ```python

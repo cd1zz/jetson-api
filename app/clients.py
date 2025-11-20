@@ -418,7 +418,7 @@ async def call_llama_server_embeddings(req: EmbeddingRequest) -> EmbeddingRespon
     if req.encoding_format:
         payload["encoding_format"] = req.encoding_format
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
