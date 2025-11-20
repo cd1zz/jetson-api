@@ -11,7 +11,8 @@ OpenAI-compatible API for local LLM inference on NVIDIA Jetson, providing a unif
 - **Embeddings API** - Generate vector embeddings for semantic search, RAG, and clustering
 - **Model-specific chat templates** - Proper formatting for each model
 - **Bearer token authentication** - Simple API key security
-- **Interactive dashboard** - Web UI with system monitoring and model testing
+- **Interactive dashboard** - Web UI with system monitoring, model testing, and activity logs
+- **Activity logs** - Real-time request monitoring with response times and model usage tracking
 - **Health checks** - Monitor backend availability
 - **Systemd integration** - Production-ready service management
 

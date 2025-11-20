@@ -9,9 +9,8 @@ venv/
 ENV/
 env/
 
-# Environment
+# Environment variables
 .env
-.env.local
 
 # IDE
 .vscode/
@@ -20,20 +19,24 @@ env/
 *.swo
 *~
 
-# Logs
-*.log
-logs/
-
 # OS
 .DS_Store
 Thumbs.db
 
-# Distribution
-dist/
-build/
-*.egg-info/
+# Test files and logs
+test_*.sh
+wget-log
+*.jpg
+*.png
+*.jpeg
+*.gif
+*_PLAN.md
+*_SETUP.md
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# Model files (too large for git)
+*.gguf
+*.bin
+
+# Log files
+*.log
+/tmp/

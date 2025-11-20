@@ -73,6 +73,8 @@ curl -X POST http://localhost:9000/v1/embeddings \
 - `/v1/models` - List available models
 - `/health` - Check backend availability and response times
 - `/system/stats` - Real-time Jetson system metrics (GPU, CPU, RAM, disk, temperatures)
+- `/api/activity-logs` - Get recent API activity logs
+- `/api/activity-logs/clear` - Clear all activity logs (requires auth)
 
 **`dashboard.html`** - Single-page web dashboard:
 - Real-time system metrics (updates every 3s)
@@ -80,6 +82,7 @@ curl -X POST http://localhost:9000/v1/embeddings \
 - Interactive chat interface with model selection
 - Image upload for vision models (auto-shows for MiniCPM-V and Qwen2.5-VL)
 - Streaming and non-streaming modes
+- Activity logs modal with real-time request monitoring (auto-refresh every 5s)
 - API reference documentation with examples
 
 **`app/system_monitor.py`** - Jetson device monitoring:
@@ -117,6 +120,13 @@ curl -X POST http://localhost:9000/v1/embeddings \
 - `ModelList`, `HealthResponse`
 
 **`app/deps.py`** - FastAPI dependency for Bearer token authentication
+
+**`app/activity_logger.py`** - Request monitoring and logging:
+- `ActivityLoggerMiddleware` - Captures all API requests/responses
+- `ActivityLog` - In-memory storage for last 200 requests (configurable)
+- Tracks: timestamp, method, endpoint, model, status code, response time, client IP, request preview
+- Auto-excludes monitoring endpoints (/system/stats, /api/activity-logs, /health)
+- Sanitizes sensitive data (API keys hidden from logs)
 
 ### Backend Architecture
 
