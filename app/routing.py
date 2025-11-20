@@ -5,7 +5,7 @@ from .config import settings
 from .models import ChatMessage
 
 
-ModelName = Literal["deepseek-r1-7b", "qwen2.5-7b-instruct", "minicpm-v-2.5", "qwen2.5-vl-7b"]
+ModelName = Literal["deepseek-r1-7b", "qwen2.5-7b-instruct", "minicpm-v-2.5", "qwen2.5-vl-7b", "qwen3-embedding-8b"]
 
 
 AVAILABLE_MODELS = {
@@ -37,6 +37,13 @@ AVAILABLE_MODELS = {
         "modality": "multimodal",
         "supports_vision": True,
     },
+    "qwen3-embedding-8b": {
+        "name": "qwen3-embedding-8b",
+        "base_url": None,  # Set dynamically from settings
+        "description": "Qwen3 Embedding 8B for vector embeddings (Q5_K_M quantization, 4096 dims)",
+        "modality": "embedding",
+        "supports_vision": False,
+    },
 }
 
 
@@ -47,6 +54,7 @@ def get_available_models() -> dict:
     models["qwen2.5-7b-instruct"]["base_url"] = str(settings.qwen_base_url)
     models["minicpm-v-2.5"]["base_url"] = str(settings.minicpm_v_base_url)
     models["qwen2.5-vl-7b"]["base_url"] = str(settings.qwen2_5_vl_base_url)
+    models["qwen3-embedding-8b"]["base_url"] = str(settings.qwen3_embedding_base_url)
     return models
 
 

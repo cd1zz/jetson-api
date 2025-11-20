@@ -15,6 +15,10 @@ from .models import (
     ChatCompletionChunk,
     ChatCompletionStreamChoice,
     Usage,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    Embedding,
+    EmbeddingUsage,
 )
 
 
@@ -377,3 +381,69 @@ async def stream_llama_server_vision(
 
                     # Yield just the JSON content (EventSourceResponse adds "data: ")
                     yield data_str
+
+
+# ============================================================================
+# Embeddings Client Functions
+# ============================================================================
+
+async def call_llama_server_embeddings(req: EmbeddingRequest) -> EmbeddingResponse:
+    """
+    Call llama-server for embeddings generation.
+
+    Args:
+        req: Embedding request
+
+    Returns:
+        Embedding response
+
+    Raises:
+        httpx.HTTPError: If the backend request fails
+    """
+    from .config import settings
+
+    base_url = str(settings.qwen3_embedding_base_url).rstrip('/')
+    url = f"{base_url}/v1/embeddings"
+
+    # Normalize input to list format
+    inputs = req.input if isinstance(req.input, list) else [req.input]
+
+    # Build request payload for llama.cpp embeddings endpoint
+    payload: Dict[str, Any] = {
+        "input": inputs,
+        "model": req.model,
+    }
+
+    # Add optional parameters
+    if req.encoding_format:
+        payload["encoding_format"] = req.encoding_format
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+    # Parse response - llama.cpp should return OpenAI-compatible format
+    embeddings = []
+    for idx, embedding_data in enumerate(data.get("data", [])):
+        embeddings.append(
+            Embedding(
+                object="embedding",
+                embedding=embedding_data.get("embedding", []),
+                index=idx,
+            )
+        )
+
+    # Extract usage information
+    usage_data = data.get("usage", {})
+    usage = EmbeddingUsage(
+        prompt_tokens=usage_data.get("prompt_tokens", 0),
+        total_tokens=usage_data.get("total_tokens", 0),
+    )
+
+    return EmbeddingResponse(
+        object="list",
+        data=embeddings,
+        model=req.model,
+        usage=usage,
+    )

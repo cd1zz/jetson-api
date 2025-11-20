@@ -1,24 +1,28 @@
 # Jetson LLM API
 
-OpenAI-compatible API for local LLM inference on NVIDIA Jetson, providing a unified interface for DeepSeek R1 and Qwen 2.5 models running via llama.cpp.
+OpenAI-compatible API for local LLM inference on NVIDIA Jetson, providing a unified interface for multiple models running via llama.cpp.
 
 ## Features
 
-- **OpenAI-compatible API** - Drop-in replacement for OpenAI API endpoints
+- **OpenAI-compatible API** - Drop-in replacement for OpenAI API endpoints (`/v1/chat/completions`, `/v1/embeddings`)
 - **Streaming support** - Real-time token streaming via Server-Sent Events (SSE)
-- **Multiple models** - Route requests to DeepSeek R1 7B or Qwen 2.5 7B
+- **Multiple models** - Text models (DeepSeek R1, Qwen 2.5), Vision models (MiniCPM-V, Qwen2.5-VL), Embeddings (Qwen3-8B)
+- **Vision support** - Multimodal image understanding with vision-language models
+- **Embeddings API** - Generate vector embeddings for semantic search, RAG, and clustering
 - **Model-specific chat templates** - Proper formatting for each model
 - **Bearer token authentication** - Simple API key security
+- **Interactive dashboard** - Web UI with system monitoring and model testing
 - **Health checks** - Monitor backend availability
 - **Systemd integration** - Production-ready service management
 
 ## Prerequisites
 
-- NVIDIA Jetson AGX Orin with JetPack 6.x
+- NVIDIA Jetson device (tested on AGX Orin with JetPack 6.x)
 - llama.cpp built with CUDA support
-- Models downloaded:
-  - DeepSeek R1 Distill Qwen 7B (Q4_K_M GGUF)
-  - Qwen 2.5 7B Instruct (Q4_K_M GGUF)
+- Models downloaded (at least one):
+  - **Text**: DeepSeek R1 Distill Qwen 7B (Q4_K_M GGUF), Qwen 2.5 7B Instruct (Q4_K_M GGUF)
+  - **Vision**: MiniCPM-V 2.5 (Q4_K_M GGUF), Qwen2.5-VL 7B (Q4_K GGUF)
+  - **Embeddings**: Qwen3 Embedding 8B (Q5_K_M GGUF)
 - Python 3.10+
 
 ## Quick Start
@@ -49,8 +53,15 @@ nano .env  # Edit to set your API_KEY and verify backend URLs
 Example `.env`:
 ```bash
 API_KEY=your-super-secret-key-here
+# Text models
 DEEPSEEK_BASE_URL=http://127.0.0.1:8081
 QWEN_BASE_URL=http://127.0.0.1:8082
+# Vision models
+MINICPM_V_BASE_URL=http://127.0.0.1:8083
+QWEN2_5_VL_BASE_URL=http://127.0.0.1:8084
+# Embedding model
+QWEN3_EMBEDDING_BASE_URL=http://127.0.0.1:8085
+# Server settings
 HOST=0.0.0.0
 PORT=9000
 LOG_LEVEL=info
@@ -101,11 +112,18 @@ cd ~/jetson-api/systemd
 ./install-services.sh
 ```
 
-Enable and start all services:
+Enable and start services (text models + embeddings):
 
 ```bash
-sudo systemctl enable llama-deepseek llama-qwen jetson-api
-sudo systemctl start llama-deepseek llama-qwen jetson-api
+sudo systemctl enable llama-deepseek llama-qwen llama-qwen3-embedding jetson-api
+sudo systemctl start llama-deepseek llama-qwen llama-qwen3-embedding jetson-api
+```
+
+Or start all models (including vision):
+
+```bash
+sudo systemctl enable llama-deepseek llama-qwen llama-minicpm-v llama-qwen2.5-vl llama-qwen3-embedding jetson-api
+sudo systemctl start llama-deepseek llama-qwen llama-minicpm-v llama-qwen2.5-vl llama-qwen3-embedding jetson-api
 ```
 
 Check status:
@@ -113,6 +131,7 @@ Check status:
 ```bash
 sudo systemctl status llama-deepseek
 sudo systemctl status llama-qwen
+sudo systemctl status llama-qwen3-embedding
 sudo systemctl status jetson-api
 ```
 
@@ -199,6 +218,36 @@ curl -X POST http://YOUR_JETSON_IP:9000/v1/chat/completions \
   }'
 ```
 
+#### Embeddings
+
+Generate vector embeddings for text:
+
+```bash
+curl -X POST http://YOUR_JETSON_IP:9000/v1/embeddings \
+  -H "Authorization: Bearer your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-embedding-8b",
+    "input": "The quick brown fox jumps over the lazy dog"
+  }'
+```
+
+Batch embeddings:
+
+```bash
+curl -X POST http://YOUR_JETSON_IP:9000/v1/embeddings \
+  -H "Authorization: Bearer your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-embedding-8b",
+    "input": [
+      "First document text",
+      "Second document text",
+      "Third document text"
+    ]
+  }'
+```
+
 #### Health Check
 
 ```bash
@@ -254,7 +303,17 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
+
+# Embeddings
+embeddings_response = client.embeddings.create(
+    model="qwen3-embedding-8b",
+    input="Hello world"
+)
+print(f"Embedding dimensions: {len(embeddings_response.data[0].embedding)}")
+print(f"First 5 values: {embeddings_response.data[0].embedding[:5]}")
 ```
+
+See `embedding_client_examples.py` for advanced embeddings use cases (semantic search, clustering, similarity).
 
 ## Project Structure
 
@@ -271,11 +330,18 @@ jetson-api/
 ├── systemd/
 │   ├── llama-deepseek.service
 │   ├── llama-qwen.service
+│   ├── llama-minicpm-v.service
+│   ├── llama-qwen2.5-vl.service
+│   ├── llama-qwen3-embedding.service
 │   ├── jetson-api.service
 │   └── install-services.sh
-├── .env.example          # Example environment variables
-├── requirements.txt      # Python dependencies
-└── README.md            # This file
+├── .env.example                # Example environment variables
+├── requirements.txt            # Python dependencies
+├── client_examples.py          # Text chat examples
+├── vision_client_examples.py   # Vision model examples
+├── embedding_client_examples.py # Embeddings examples
+├── dashboard.html              # Web UI
+└── README.md                   # This file
 ```
 
 ## Available Models

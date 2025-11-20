@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     minicpm_v_base_url: HttpUrl = "http://127.0.0.1:8083"  # type: ignore
     qwen2_5_vl_base_url: HttpUrl = "http://127.0.0.1:8084"  # type: ignore
 
+    # Embedding model backend URL
+    qwen3_embedding_base_url: HttpUrl = "http://127.0.0.1:8085"  # type: ignore
+
     # Server configuration
     host: str = "0.0.0.0"
     port: int = 9000

@@ -126,3 +126,49 @@ class HealthResponse(BaseModel):
 
     status: str
     models: Dict[str, Dict[str, Any]]
+
+
+# ============================================================================
+# Embeddings Models
+# ============================================================================
+
+class EmbeddingRequest(BaseModel):
+    """Request for embeddings endpoint."""
+
+    model: str = Field(..., description="Model to use for embeddings")
+    input: Union[str, List[str]] = Field(
+        ...,
+        description="Input text or list of texts to embed"
+    )
+    encoding_format: Optional[Literal["float", "base64"]] = Field(
+        "float",
+        description="Format for the embeddings"
+    )
+    dimensions: Optional[int] = Field(
+        None,
+        description="Number of dimensions for the output embeddings (if supported)"
+    )
+
+
+class Embedding(BaseModel):
+    """A single embedding object."""
+
+    object: str = "embedding"
+    embedding: List[float]
+    index: int
+
+
+class EmbeddingUsage(BaseModel):
+    """Token usage for embeddings."""
+
+    prompt_tokens: int
+    total_tokens: int
+
+
+class EmbeddingResponse(BaseModel):
+    """Response for embeddings endpoint."""
+
+    object: str = "list"
+    data: List[Embedding]
+    model: str
+    usage: EmbeddingUsage

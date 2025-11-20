@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 OpenAI-compatible API for local LLM inference on NVIDIA Jetson devices. Provides a unified FastAPI interface that routes requests to multiple llama.cpp backend servers running different models:
 - **Text Models**: DeepSeek R1 7B, Qwen 2.5 7B
 - **Vision Models**: MiniCPM-V 2.5, Qwen2.5-VL-7B (multimodal image+text)
+- **Embedding Model**: Qwen3 Embedding 8B (text embeddings for semantic search, RAG, clustering)
 - **Web Dashboard**: Interactive UI at `http://localhost:9000` for testing models and monitoring system metrics
 
 ## Development Commands
@@ -44,6 +45,12 @@ curl -X POST http://localhost:9000/v1/chat/completions \
   -H "Authorization: Bearer your-api-key-here" \
   -H "Content-Type: application/json" \
   -d '{"model": "qwen2.5-7b-instruct", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Test embeddings
+curl -X POST http://localhost:9000/v1/embeddings \
+  -H "Authorization: Bearer your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen3-embedding-8b", "input": "Hello world"}'
 ```
 
 ## Architecture
@@ -62,6 +69,7 @@ curl -X POST http://localhost:9000/v1/chat/completions \
 **`app/main.py`** - FastAPI application with endpoints:
 - `/` - Serves the interactive dashboard (dashboard.html)
 - `/v1/chat/completions` - OpenAI-compatible chat endpoint (streaming & non-streaming, text & vision)
+- `/v1/embeddings` - OpenAI-compatible embeddings endpoint for vector generation
 - `/v1/models` - List available models
 - `/health` - Check backend availability and response times
 - `/system/stats` - Real-time Jetson system metrics (GPU, CPU, RAM, disk, temperatures)
@@ -92,6 +100,8 @@ curl -X POST http://localhost:9000/v1/chat/completions \
 **`app/clients.py`** - llama-server communication:
 - `call_llama_server()` - Non-streaming completions via `/completion` endpoint
 - `stream_llama_server()` - SSE streaming via llama.cpp's streaming API
+- `call_llama_server_vision()` / `stream_llama_server_vision()` - Vision model handlers
+- `call_llama_server_embeddings()` - Embeddings generation via `/v1/embeddings` endpoint
 - `check_backend_health()` - Backend health checks using `/props` endpoint
 - Translates llama.cpp response format to OpenAI-compatible format
 
@@ -103,6 +113,7 @@ curl -X POST http://localhost:9000/v1/chat/completions \
 **`app/models.py`** - Pydantic models for OpenAI-compatible API:
 - `ChatCompletionRequest` / `ChatCompletionResponse`
 - `ChatCompletionChunk` / `ChatCompletionStreamChoice` (for streaming)
+- `EmbeddingRequest` / `EmbeddingResponse` (for embeddings)
 - `ModelList`, `HealthResponse`
 
 **`app/deps.py`** - FastAPI dependency for Bearer token authentication
@@ -118,21 +129,21 @@ Dashboard / API (port 9000) - with system monitoring
     ↓
 Model Router (app/routing.py)
     ↓
-┌─────────────────┬─────────────────┬─────────────────┬─────────────────┐
-│ llama-server    │ llama-server    │ llama-server    │ llama-server    │
-│ DeepSeek R1     │ Qwen 2.5        │ MiniCPM-V 2.5   │ Qwen2.5-VL 7B   │
-│ (text)          │ (text)          │ (vision)        │ (vision)        │
-│ :8081           │ :8082           │ :8083           │ :8084           │
-└─────────────────┴─────────────────┴─────────────────┴─────────────────┘
+┌─────────────────┬─────────────────┬─────────────────┬─────────────────┬─────────────────┐
+│ llama-server    │ llama-server    │ llama-server    │ llama-server    │ llama-server    │
+│ DeepSeek R1     │ Qwen 2.5        │ MiniCPM-V 2.5   │ Qwen2.5-VL 7B   │ Qwen3 Embed 8B  │
+│ (text)          │ (text)          │ (vision)        │ (vision)        │ (embeddings)    │
+│ :8081           │ :8082           │ :8083           │ :8084           │ :8085           │
+└─────────────────┴─────────────────┴─────────────────┴─────────────────┴─────────────────┘
 ```
 
-Each llama-server instance runs a single quantized GGUF model with CUDA acceleration. Vision models include multimodal projection (mmproj) files for image understanding. The API routes requests based on the `model` field and applies the correct chat template.
+Each llama-server instance runs a single quantized GGUF model with CUDA acceleration. Vision models include multimodal projection (mmproj) files for image understanding. The embeddings model runs in embeddings mode (`--embeddings` flag) for vector generation. The API routes requests based on the `model` field and endpoint.
 
 ## Configuration
 
 Environment variables (`.env`):
 - **Required**: `API_KEY` - Must be set to a secure value for production
-- **Backend URLs**: `DEEPSEEK_BASE_URL`, `QWEN_BASE_URL` - Point to llama-server instances
+- **Backend URLs**: `DEEPSEEK_BASE_URL`, `QWEN_BASE_URL`, `MINICPM_V_BASE_URL`, `QWEN2_5_VL_BASE_URL`, `QWEN3_EMBEDDING_BASE_URL` - Point to llama-server instances
 - **Server**: `HOST` (default: 0.0.0.0), `PORT` (default: 9000)
 
 ## Production Deployment
@@ -142,6 +153,7 @@ Systemd services in `systemd/`:
 - `llama-qwen.service` - Qwen 2.5 7B text backend (port 8082)
 - `llama-minicpm-v.service` - MiniCPM-V 2.5 vision backend (port 8083)
 - `llama-qwen2.5-vl.service` - Qwen2.5-VL-7B vision backend (port 8084)
+- `llama-qwen3-embedding.service` - Qwen3 Embedding 8B backend (port 8085)
 - `jetson-api.service` - Main FastAPI server with dashboard (port 9000)
 
 ### Installation

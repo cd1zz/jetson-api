@@ -1,0 +1,24 @@
+[Unit]
+Description=llama.cpp server for Qwen3 Embedding 8B (embeddings)
+After=network.target
+
+[Service]
+Type=simple
+User=%USER%
+WorkingDirectory=%HOME%/llama.cpp
+Environment="CUDA_VISIBLE_DEVICES=0"
+ExecStart=%HOME%/llama.cpp/build/bin/llama-server \
+    --model %HOME%/models/qwen3-embedding-8b/Qwen3-Embedding-8B-Q5_K_M.gguf \
+    --ctx-size 8192 \
+    --port 8085 \
+    --n-gpu-layers 99 \
+    --threads %NPROC% \
+    --host 127.0.0.1 \
+    --embeddings
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

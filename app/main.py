@@ -17,6 +17,8 @@ from .models import (
     ModelList,
     Model,
     HealthResponse,
+    EmbeddingRequest,
+    EmbeddingResponse,
 )
 from .clients import (
     call_llama_server,
@@ -24,9 +26,11 @@ from .clients import (
     call_llama_server_vision,
     stream_llama_server_vision,
     check_backend_health,
+    call_llama_server_embeddings,
 )
 from .deps import verify_api_key
 from .routing import get_available_models, is_vision_model, detect_vision_content
+from .activity_logger import ActivityLoggerMiddleware, activity_log
 
 
 # Configure logging
@@ -53,6 +57,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Add activity logging middleware
+app.add_middleware(ActivityLoggerMiddleware)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -189,6 +196,26 @@ async def chat_completions(
         )
 
 
+@app.post("/v1/embeddings", response_model=EmbeddingResponse)
+async def create_embeddings(
+    request: EmbeddingRequest,
+    _: None = Depends(verify_api_key),
+):
+    """
+    Create embeddings for input text.
+    OpenAI-compatible endpoint.
+    """
+    try:
+        response = await call_llama_server_embeddings(request)
+        return response
+    except Exception as e:
+        logger.error(f"Error processing embeddings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating embeddings: {str(e)}",
+        )
+
+
 @app.get("/system/stats")
 async def system_stats():
     """
@@ -203,6 +230,48 @@ async def system_stats():
         raise HTTPException(
             status_code=500,
             detail=f"Error retrieving system stats: {str(e)}",
+        )
+
+
+@app.get("/api/activity-logs")
+async def get_activity_logs(limit: int = 100):
+    """
+    Get recent API activity logs.
+    No authentication required for monitoring endpoint.
+
+    Args:
+        limit: Maximum number of logs to return (default: 100, max: 200)
+    """
+    try:
+        # Clamp limit to max 200
+        limit = min(limit, 200)
+        logs = activity_log.get_logs(limit=limit)
+        return {
+            "logs": logs,
+            "count": len(logs),
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving activity logs: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving activity logs: {str(e)}",
+        )
+
+
+@app.post("/api/activity-logs/clear")
+async def clear_activity_logs(_: None = Depends(verify_api_key)):
+    """
+    Clear all activity logs.
+    Requires authentication.
+    """
+    try:
+        activity_log.clear_logs()
+        return {"status": "success", "message": "Activity logs cleared"}
+    except Exception as e:
+        logger.error(f"Error clearing activity logs: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error clearing activity logs: {str(e)}",
         )
 
 

@@ -54,14 +54,63 @@
             max-height: 300px;
             object-fit: contain;
         }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 2% auto;
+            padding: 0;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .close-modal {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .close-modal:hover,
+        .close-modal:focus {
+            color: #000;
+        }
     </style>
 </head>
 <body class="bg-gray-50">
     <div class="container mx-auto px-4 py-8 max-w-7xl">
         <!-- Header -->
-        <div class="mb-8">
-            <h1 class="text-4xl font-bold text-gray-900 mb-2">Jetson LLM Dashboard</h1>
-            <p class="text-gray-600">Monitor and test your local LLM models</p>
+        <div class="mb-8 flex justify-between items-start">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-900 mb-2">Jetson LLM Dashboard</h1>
+                <p class="text-gray-600">Monitor and test your local LLM models</p>
+            </div>
+            <div class="flex gap-2">
+                <a href="/openapi.json" target="_blank" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
+                    OpenAPI JSON
+                </a>
+                <button onclick="openActivityLogs()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition">
+                    📊 Activity Logs
+                </button>
+                <button onclick="openAPIReference()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                    📚 API Reference
+                </button>
+            </div>
         </div>
 
         <!-- System Metrics -->
@@ -143,16 +192,22 @@
             </div>
         </div>
 
-        <!-- API Reference -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-2xl font-bold mb-4">API Reference</h2>
+        <!-- API Reference Modal -->
+        <div id="apiReferenceModal" class="modal">
+            <div class="modal-content">
+                <div class="bg-white rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold">API Reference</h2>
+                        <span class="close-modal" onclick="closeAPIReference()">&times;</span>
+                    </div>
             <div class="space-y-4">
                 <div class="border-l-4 border-blue-500 pl-4">
                     <h3 class="font-semibold text-lg mb-2">OpenAI-Compatible API</h3>
-                    <p class="text-gray-600 mb-2">This API implements the OpenAI chat completions format, making it compatible with OpenAI SDKs and tools.</p>
+                    <p class="text-gray-600 mb-2">This API implements OpenAI's chat completions and embeddings format, making it compatible with OpenAI SDKs and tools.</p>
                     <div class="bg-gray-50 p-3 rounded mt-2">
                         <p class="text-sm"><strong>Base URL:</strong> <code class="bg-gray-200 px-2 py-1 rounded">http://localhost:9000</code></p>
                         <p class="text-sm mt-1"><strong>Authentication:</strong> Bearer token via <code class="bg-gray-200 px-2 py-1 rounded">Authorization</code> header</p>
+                        <p class="text-sm mt-1"><strong>OpenAPI Spec:</strong> <a href="/openapi.json" target="_blank" class="text-blue-600 hover:underline">/openapi.json</a></p>
                     </div>
                 </div>
 
@@ -239,6 +294,50 @@
                 </details>
 
                 <details class="border rounded-lg">
+                    <summary class="cursor-pointer p-4 font-semibold hover:bg-gray-50">POST /v1/embeddings</summary>
+                    <div class="p-4 border-t space-y-3">
+                        <p class="text-sm text-gray-600">Generate vector embeddings for text inputs. Useful for semantic search, RAG, and clustering.</p>
+
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Request Body (Single Text):</p>
+                            <pre class="text-xs"><code>{
+  "model": "qwen3-embedding-8b",
+  "input": "Your text to embed"
+}</code></pre>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Request Body (Batch):</p>
+                            <pre class="text-xs"><code>{
+  "model": "qwen3-embedding-8b",
+  "input": [
+    "First document",
+    "Second document",
+    "Third document"
+  ]
+}</code></pre>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-semibold mb-1">Response:</p>
+                            <pre class="text-xs"><code>{
+  "object": "list",
+  "data": [{
+    "object": "embedding",
+    "embedding": [0.0023, -0.0019, ...],  // 4096 dimensions
+    "index": 0
+  }],
+  "model": "qwen3-embedding-8b",
+  "usage": {
+    "prompt_tokens": 10,
+    "total_tokens": 10
+  }
+}</code></pre>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="border rounded-lg">
                     <summary class="cursor-pointer p-4 font-semibold hover:bg-gray-50">GET /health</summary>
                     <div class="p-4 border-t space-y-3">
                         <p class="text-sm text-gray-600">Check health status of all backend models.</p>
@@ -313,7 +412,59 @@ response = client.chat.completions.create(
             {"type": "image_url", "image_url": {"url": "path/to/image.jpg"}}
         ]
     }]
-)</code></pre>
+)
+
+# Embeddings
+embeddings = client.embeddings.create(
+    model="qwen3-embedding-8b",
+    input="Your text to embed"
+)
+print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
+                </div>
+            </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Logs Modal -->
+        <div id="activityLogsModal" class="modal">
+            <div class="modal-content">
+                <div class="bg-white rounded-lg p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold">Activity Logs</h2>
+                        <span class="close-modal" onclick="closeActivityLogs()">&times;</span>
+                    </div>
+
+                    <div class="mb-4 flex gap-2">
+                        <button onclick="refreshActivityLogs()" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
+                            Refresh
+                        </button>
+                        <button onclick="clearActivityLogs()" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm">
+                            Clear Logs
+                        </button>
+                        <span id="logCount" class="px-3 py-1 bg-gray-100 rounded text-sm text-gray-700"></span>
+                    </div>
+
+                    <div id="activityLogsContainer" class="overflow-x-auto" style="max-height: 60vh;">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50 sticky top-0">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Endpoint</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time (ms)</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Preview</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activityLogsTable" class="bg-white divide-y divide-gray-200">
+                                <tr>
+                                    <td colspan="7" class="px-3 py-4 text-center text-gray-500">Loading logs...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -492,9 +643,128 @@ response = client.chat.completions.create(
                 'deepseek-r1-7b': 'Text - DeepSeek R1 7B',
                 'qwen2.5-7b-instruct': 'Text - Qwen 2.5 7B',
                 'minicpm-v-2.5': 'Vision - MiniCPM-V 2.5',
-                'qwen2.5-vl-7b': 'Vision - Qwen 2.5 VL 7B'
+                'qwen2.5-vl-7b': 'Vision - Qwen 2.5 VL 7B',
+                'qwen3-embedding-8b': 'Embeddings - Qwen3 8B (4096 dims)'
             };
             return descriptions[modelId] || 'LLM Model';
+        }
+
+        function openAPIReference() {
+            document.getElementById('apiReferenceModal').style.display = 'block';
+        }
+
+        function closeAPIReference() {
+            document.getElementById('apiReferenceModal').style.display = 'none';
+        }
+
+        // Activity Logs functions
+        let activityLogsInterval = null;
+
+        function openActivityLogs() {
+            document.getElementById('activityLogsModal').style.display = 'block';
+            refreshActivityLogs();
+            // Auto-refresh every 5 seconds
+            activityLogsInterval = setInterval(refreshActivityLogs, 5000);
+        }
+
+        function closeActivityLogs() {
+            document.getElementById('activityLogsModal').style.display = 'none';
+            // Stop auto-refresh
+            if (activityLogsInterval) {
+                clearInterval(activityLogsInterval);
+                activityLogsInterval = null;
+            }
+        }
+
+        async function refreshActivityLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/api/activity-logs?limit=100`);
+                const data = await response.json();
+
+                const tableBody = document.getElementById('activityLogsTable');
+                const logCount = document.getElementById('logCount');
+
+                logCount.textContent = `${data.count} logs`;
+
+                if (data.logs.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="7" class="px-3 py-4 text-center text-gray-500">No activity logs yet</td></tr>';
+                    return;
+                }
+
+                tableBody.innerHTML = data.logs.map(log => {
+                    const time = new Date(log.timestamp).toLocaleTimeString();
+                    const statusClass = log.status_code < 300 ? 'text-green-600' :
+                                       log.status_code < 400 ? 'text-blue-600' :
+                                       log.status_code < 500 ? 'text-yellow-600' : 'text-red-600';
+
+                    let preview = '';
+                    if (log.request_preview) {
+                        if (log.request_preview.last_message) {
+                            preview = log.request_preview.last_message;
+                        } else if (log.request_preview.messages) {
+                            preview = log.request_preview.messages;
+                        } else if (log.request_preview.input) {
+                            preview = log.request_preview.input;
+                        }
+                    }
+
+                    return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-3 py-2 text-xs text-gray-600">${time}</td>
+                            <td class="px-3 py-2 text-xs">
+                                <span class="px-2 py-1 rounded ${log.method === 'POST' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">
+                                    ${log.method}
+                                </span>
+                            </td>
+                            <td class="px-3 py-2 text-xs font-mono text-gray-700">${log.path}</td>
+                            <td class="px-3 py-2 text-xs">
+                                ${log.model ? `<span class="px-2 py-1 bg-purple-100 text-purple-800 rounded">${log.model}</span>` : '-'}
+                            </td>
+                            <td class="px-3 py-2 text-xs font-semibold ${statusClass}">${log.status_code}</td>
+                            <td class="px-3 py-2 text-xs text-gray-600">${log.response_time_ms}</td>
+                            <td class="px-3 py-2 text-xs text-gray-500 max-w-xs truncate">${preview || '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error fetching activity logs:', error);
+            }
+        }
+
+        async function clearActivityLogs() {
+            if (!confirm('Are you sure you want to clear all activity logs?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/api/activity-logs/clear`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`
+                    }
+                });
+
+                if (response.ok) {
+                    refreshActivityLogs();
+                } else {
+                    alert('Failed to clear logs');
+                }
+            } catch (error) {
+                console.error('Error clearing activity logs:', error);
+                alert('Error clearing logs');
+            }
+        }
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            const apiModal = document.getElementById('apiReferenceModal');
+            const logsModal = document.getElementById('activityLogsModal');
+
+            if (event.target == apiModal) {
+                closeAPIReference();
+            } else if (event.target == logsModal) {
+                closeActivityLogs();
+            }
         }
 
         // Update system metrics
