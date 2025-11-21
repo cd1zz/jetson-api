@@ -47,6 +47,9 @@
             min-height: 200px;
             max-height: 500px;
             overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .image-preview {
@@ -558,7 +561,7 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                 </div>
                 <div class="flex items-end">
                     <label class="flex items-center">
-                        <input type="checkbox" id="streamToggle" class="mr-2">
+                        <input type="checkbox" id="streamToggle" class="mr-2" checked>
                         <span class="text-sm font-medium text-gray-700">Stream Response</span>
                     </label>
                 </div>
