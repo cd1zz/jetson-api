@@ -58,9 +58,12 @@ class ActivityLoggerMiddleware(BaseHTTPMiddleware):
             try:
                 # Read body
                 body = await request.body()
+                is_streaming = False
+
                 if body:
                     body_json = json.loads(body.decode())
                     model_name = body_json.get("model")
+                    is_streaming = body_json.get("stream", False)
 
                     # Create sanitized preview (hide images, truncate long text)
                     request_preview = {}
@@ -80,11 +83,12 @@ class ActivityLoggerMiddleware(BaseHTTPMiddleware):
                         else:
                             request_preview["input"] = input_data[:50] + "..." if len(input_data) > 50 else input_data
 
-                # Restore body for the actual request handler
-                async def receive():
-                    return {"type": "http.request", "body": body}
+                # Restore body for the actual request handler (but not for streaming requests)
+                if not is_streaming:
+                    async def receive():
+                        return {"type": "http.request", "body": body}
 
-                request._receive = receive
+                    request._receive = receive
             except Exception:
                 # If we can't parse body, continue anyway
                 pass
