@@ -7,14 +7,20 @@ Type=simple
 User=%USER%
 WorkingDirectory=%HOME%/llama.cpp
 Environment="CUDA_VISIBLE_DEVICES=0"
+LimitMEMLOCK=infinity
 ExecStart=%HOME%/llama.cpp/build/bin/llama-server \
     --model %HOME%/models/qwen3-vl-8b/Qwen_Qwen3-VL-8B-Instruct-Q4_K_M.gguf \
     --mmproj %HOME%/models/qwen3-vl-8b/mmproj-Qwen_Qwen3-VL-8B-Instruct-f16.gguf \
-    --ctx-size 4096 \
+    --ctx-size 32768 \
     --port 8084 \
     --n-gpu-layers 99 \
     --threads %NPROC% \
-    --host 127.0.0.1
+    --host 127.0.0.1 \
+    --flash-attn on \
+    --mlock \
+    --batch-size 2048 \
+    --ubatch-size 2048 \
+    --parallel 1
 Restart=always
 RestartSec=10
 StandardOutput=journal
