@@ -1,5 +1,6 @@
 """FastAPI application for Jetson LLM API."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -46,8 +47,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     logger.info("Starting Jetson LLM API")
-    logger.info(f"DeepSeek backend: {settings.deepseek_base_url}")
     logger.info(f"Qwen backend: {settings.qwen_base_url}")
+    logger.info(f"Qwen Coder backend: {settings.qwen_coder_base_url}")
     yield
     logger.info("Shutting down Jetson LLM API")
 
@@ -101,6 +102,16 @@ async def health_check():
             "base_url": base_url,
             **health,
         }
+
+    # Embedding backend isn't in AVAILABLE_MODELS (it's not a chat model) but
+    # the dashboard still needs its health to avoid showing a permanent
+    # "Loading..." state for an active service.
+    embedding_url = str(settings.qwen3_embedding_base_url)
+    embedding_health = await check_backend_health(embedding_url)
+    models_health["qwen3-embedding-8b"] = {
+        "base_url": embedding_url,
+        **embedding_health,
+    }
 
     # Determine overall status
     all_healthy = all(
@@ -163,7 +174,7 @@ async def chat_completions(
         raise HTTPException(
             status_code=400,
             detail=f"Model '{request.model}' does not support vision/image inputs. "
-                   f"Please use a vision-capable model like 'minicpm-v-2.5'.",
+                   f"Please use a vision-capable model like 'qwen3-vl-8b'.",
         )
 
     try:
@@ -202,10 +213,12 @@ async def chat_completions(
             detail=f"Could not connect to model backend. The backend server may be down or overloaded.",
         )
     except httpx.HTTPStatusError as e:
-        logger.error(f"Backend returned error {e.response.status_code}: {e.response.text}")
+        upstream = e.response.status_code
+        logger.error(f"Backend returned error {upstream}: {e.response.text}")
+        status = upstream if 400 <= upstream < 500 else 502
         raise HTTPException(
-            status_code=502,
-            detail=f"Backend server error: {e.response.status_code} - {e.response.text[:200]}",
+            status_code=status,
+            detail=f"Backend server error: {upstream} - {e.response.text[:200]}",
         )
     except Exception as e:
         logger.error(f"Error processing completion: {e}", exc_info=True)
@@ -241,10 +254,12 @@ async def create_embeddings(
             detail=f"Could not connect to embeddings backend. The backend server may be down.",
         )
     except httpx.HTTPStatusError as e:
-        logger.error(f"Embeddings backend returned error {e.response.status_code}: {e.response.text}")
+        upstream = e.response.status_code
+        logger.error(f"Embeddings backend returned error {upstream}: {e.response.text}")
+        status = upstream if 400 <= upstream < 500 else 502
         raise HTTPException(
-            status_code=502,
-            detail=f"Embeddings backend error: {e.response.status_code} - {e.response.text[:200]}",
+            status_code=status,
+            detail=f"Embeddings backend error: {upstream} - {e.response.text[:200]}",
         )
     except Exception as e:
         logger.error(f"Error processing embeddings: {e}", exc_info=True)
@@ -313,53 +328,142 @@ async def clear_activity_logs(_: None = Depends(verify_api_key)):
         )
 
 
+MANAGED_SERVICES = {
+    "qwen2.5-7b-instruct": {
+        "service": "llama-qwen.service",
+        "label": "Qwen 2.5 7B Instruct",
+        "approx_ram_gb": 5,
+    },
+    "qwen2.5-coder-14b-instruct": {
+        "service": "llama-qwen-coder.service",
+        "label": "Qwen 2.5 Coder 14B",
+        "approx_ram_gb": 10,
+    },
+    "qwen3-vl-8b": {
+        "service": "llama-qwen3-vl.service",
+        "label": "Qwen3 VL 8B",
+        "approx_ram_gb": 8,
+    },
+    "qwen3-embedding-8b": {
+        "service": "llama-qwen3-embedding.service",
+        "label": "Qwen3 Embedding 8B",
+        "approx_ram_gb": 6,
+    },
+}
+
+
+async def _systemctl(*args: str) -> tuple[int, str]:
+    """Run systemctl and return (exit_code, stdout+stderr)."""
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    stdout, _ = await proc.communicate()
+    return proc.returncode, stdout.decode().strip()
+
+
+async def _service_state(service: str) -> str:
+    """Return systemd state: active, inactive, activating, deactivating, failed, unknown."""
+    code, out = await _systemctl("/usr/bin/systemctl", "is-active", service)
+    return out or ("active" if code == 0 else "unknown")
+
+
+@app.get("/api/models/control")
+async def models_control_status():
+    """Get start/stop control state for all managed models. No auth (read-only)."""
+    states = await asyncio.gather(
+        *(_service_state(info["service"]) for info in MANAGED_SERVICES.values())
+    )
+    models = [
+        {
+            "id": model_id,
+            "service": info["service"],
+            "label": info["label"],
+            "approx_ram_gb": info["approx_ram_gb"],
+            "state": state,
+        }
+        for (model_id, info), state in zip(MANAGED_SERVICES.items(), states)
+    ]
+    return {"models": models}
+
+
+async def _control_service(model_id: str, action: str) -> dict:
+    if model_id not in MANAGED_SERVICES:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown managed model '{model_id}'. Available: {list(MANAGED_SERVICES)}",
+        )
+    if action not in ("start", "stop", "restart"):
+        raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+    service = MANAGED_SERVICES[model_id]["service"]
+    code, out = await _systemctl("/usr/bin/sudo", "-n", "/usr/bin/systemctl", action, service)
+    if code != 0:
+        logger.error(f"systemctl {action} {service} failed (exit {code}): {out}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to {action} {service}: {out[:300]}",
+        )
+    state = await _service_state(service)
+    return {"id": model_id, "service": service, "action": action, "state": state}
+
+
+@app.post("/api/models/{model_id}/start")
+async def start_model(model_id: str, _: None = Depends(verify_api_key)):
+    """Start the systemd service backing a model. Requires authentication."""
+    return await _control_service(model_id, "start")
+
+
+@app.post("/api/models/{model_id}/stop")
+async def stop_model(model_id: str, _: None = Depends(verify_api_key)):
+    """Stop the systemd service backing a model (frees RAM). Requires authentication."""
+    return await _control_service(model_id, "stop")
+
+
+@app.post("/api/models/{model_id}/restart")
+async def restart_model(model_id: str, _: None = Depends(verify_api_key)):
+    """Restart the systemd service backing a model. Requires authentication."""
+    return await _control_service(model_id, "restart")
+
+
 @app.get("/api/queue-status")
 async def get_queue_status():
     """
-    Get queue status for the embeddings backend.
-    Shows slot utilization and processing status.
-    No authentication required for monitoring endpoint.
+    Get queue/slot status for every configured backend.
+    Backends that don't respond are returned with status="offline" so the
+    dashboard can hide cards for models that aren't currently running.
     """
-    try:
-        from .config import settings
+    backends = {
+        "qwen2.5-7b-instruct": str(settings.qwen_base_url).rstrip('/'),
+        "qwen2.5-coder-14b-instruct": str(settings.qwen_coder_base_url).rstrip('/'),
+        "qwen3-vl-8b": str(settings.qwen3_vl_base_url).rstrip('/'),
+        "qwen3-embedding-8b": str(settings.qwen3_embedding_base_url).rstrip('/'),
+    }
 
-        base_url = str(settings.qwen3_embedding_base_url).rstrip('/')
-        slots_url = f"{base_url}/slots"
+    async def probe(model_id: str, base_url: str) -> tuple[str, dict]:
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                response = await client.get(f"{base_url}/slots")
+                response.raise_for_status()
+                slots_data = response.json()
+        except Exception:
+            return model_id, {"backend_url": base_url, "status": "offline"}
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(slots_url)
-            response.raise_for_status()
-            slots_data = response.json()
-
-        # Parse slot information
         total_slots = len(slots_data)
         busy_slots = sum(1 for slot in slots_data if slot.get("is_processing", False))
-        idle_slots = total_slots - busy_slots
-
-        # Get active task IDs
-        active_tasks = [
-            slot.get("id_task")
-            for slot in slots_data
-            if slot.get("is_processing", False)
-        ]
-
-        return {
-            "backend": "qwen3-embedding-8b",
+        return model_id, {
             "backend_url": base_url,
+            "status": "online",
             "total_slots": total_slots,
             "busy_slots": busy_slots,
-            "idle_slots": idle_slots,
+            "idle_slots": total_slots - busy_slots,
             "utilization_percent": round((busy_slots / total_slots * 100) if total_slots > 0 else 0, 1),
-            "at_capacity": busy_slots >= total_slots,
-            "active_tasks": active_tasks,
-            "slots": slots_data,
+            "at_capacity": total_slots > 0 and busy_slots >= total_slots,
         }
-    except Exception as e:
-        logger.error(f"Error retrieving queue status: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error retrieving queue status: {str(e)}",
-        )
+
+    pairs = await asyncio.gather(*(probe(m, u) for m, u in backends.items()))
+    return {"backends": dict(pairs)}
 
 
 if __name__ == "__main__":

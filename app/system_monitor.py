@@ -1,90 +1,143 @@
 """System monitoring utilities for Jetson devices."""
 
 import os
-import re
-import subprocess
-from typing import Dict, Any, Optional
+import time
+from typing import Dict, Any
+
+
+# Jetson GPU sysfs paths
+_GPU_LOAD_PATH = "/sys/devices/platform/bus@0/17000000.gpu/load"
+_GPU_CUR_FREQ_PATH = "/sys/devices/platform/bus@0/17000000.gpu/devfreq/17000000.gpu/cur_freq"
+_GPU_MAX_FREQ_PATH = "/sys/devices/platform/bus@0/17000000.gpu/devfreq/17000000.gpu/max_freq"
+
+
+def _read_sysfs_int(path: str, default: int = 0) -> int:
+    """Read an integer from a sysfs file."""
+    try:
+        with open(path, "r") as f:
+            return int(f.read().strip())
+    except (FileNotFoundError, ValueError, PermissionError):
+        return default
 
 
 def get_gpu_stats() -> Dict[str, Any]:
     """
-    Get GPU statistics using nvidia-smi.
+    Get GPU statistics using Jetson sysfs interfaces.
+
+    On Jetson, nvidia-smi returns "Not Supported" for most metrics.
+    Instead, we read directly from sysfs:
+    - /sys/devices/platform/bus@0/17000000.gpu/load (0-1000 scale)
+    - devfreq cur_freq / max_freq (in Hz)
+
+    Jetson uses unified memory, so GPU memory = system memory.
 
     Returns:
-        Dictionary with GPU utilization, memory, and temperature
+        Dictionary with GPU utilization, frequency, and temperature
     """
-    try:
-        result = subprocess.run(
-            ['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu',
-             '--format=csv,noheader,nounits'],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
+    # GPU load: 0-1000 scale (divide by 10 for percentage)
+    load_raw = _read_sysfs_int(_GPU_LOAD_PATH, 0)
+    utilization = round(load_raw / 10.0, 1)
 
-        if result.returncode == 0:
-            # Parse: "utilization, mem_used, mem_total, temp"
-            parts = result.stdout.strip().split(',')
-            if len(parts) >= 4:
-                return {
-                    "utilization": int(parts[0].strip()),
-                    "memory_used_mb": int(parts[1].strip()),
-                    "memory_total_mb": int(parts[2].strip()),
-                    "temperature_c": int(parts[3].strip()),
-                }
-    except Exception:
-        pass
+    # GPU frequency in MHz
+    cur_freq_hz = _read_sysfs_int(_GPU_CUR_FREQ_PATH, 0)
+    max_freq_hz = _read_sysfs_int(_GPU_MAX_FREQ_PATH, 0)
+    cur_freq_mhz = cur_freq_hz // 1_000_000
+    max_freq_mhz = max_freq_hz // 1_000_000
+
+    # GPU temperature from thermal zone
+    gpu_temp = _get_thermal_zone_temp("gpu-thermal")
 
     return {
-        "utilization": 0,
-        "memory_used_mb": 0,
-        "memory_total_mb": 0,
-        "temperature_c": 0,
+        "utilization": utilization,
+        "cur_freq_mhz": cur_freq_mhz,
+        "max_freq_mhz": max_freq_mhz,
+        "temperature_c": gpu_temp,
     }
+
+
+def _get_thermal_zone_temp(zone_name: str) -> int:
+    """Get temperature for a specific thermal zone by name."""
+    thermal_path = "/sys/class/thermal"
+    try:
+        for zone in os.listdir(thermal_path):
+            if not zone.startswith("thermal_zone"):
+                continue
+            type_file = os.path.join(thermal_path, zone, "type")
+            temp_file = os.path.join(thermal_path, zone, "temp")
+            try:
+                with open(type_file, "r") as f:
+                    if f.read().strip() == zone_name:
+                        with open(temp_file, "r") as tf:
+                            val = tf.read().strip()
+                            if val:
+                                return int(val) // 1000
+            except (FileNotFoundError, ValueError):
+                continue
+    except OSError:
+        pass
+    return 0
+
+
+def _read_proc_stat() -> tuple:
+    """Read CPU idle and total jiffies from /proc/stat."""
+    with open("/proc/stat", "r") as f:
+        line = f.readline()
+    parts = line.split()
+    # cpu  user nice system idle iowait irq softirq steal
+    values = [int(x) for x in parts[1:9]]
+    idle = values[3] + values[4]  # idle + iowait
+    total = sum(values)
+    return idle, total
 
 
 def get_cpu_stats() -> Dict[str, Any]:
     """
-    Get CPU statistics from /proc/stat.
+    Get CPU utilization using two-sample delta from /proc/stat.
+
+    Takes two readings 100ms apart to compute instantaneous utilization
+    rather than cumulative-since-boot.
 
     Returns:
         Dictionary with CPU utilization percentage
     """
     try:
-        with open('/proc/stat', 'r') as f:
-            line = f.readline()
-            # cpu  user nice system idle iowait irq softirq
-            parts = line.split()
-            if parts[0] == 'cpu':
-                idle = int(parts[4])
-                total = sum(int(x) for x in parts[1:8])
-                # Simple approximation - would need two samples for accuracy
-                utilization = int(100 * (1 - idle / max(total, 1)))
-                return {"utilization": min(utilization, 100)}
-    except Exception:
-        pass
+        idle1, total1 = _read_proc_stat()
+        time.sleep(0.1)
+        idle2, total2 = _read_proc_stat()
 
-    return {"utilization": 0}
+        idle_delta = idle2 - idle1
+        total_delta = total2 - total1
+
+        if total_delta == 0:
+            return {"utilization": 0}
+
+        utilization = int(100 * (1 - idle_delta / total_delta))
+        return {"utilization": max(0, min(100, utilization))}
+    except Exception:
+        return {"utilization": 0}
 
 
 def get_memory_stats() -> Dict[str, Any]:
     """
     Get system memory statistics from /proc/meminfo.
 
+    On Jetson, GPU and CPU share unified memory, so system RAM
+    reflects total available memory for both CPU and GPU workloads.
+
     Returns:
         Dictionary with RAM usage in MB
     """
     try:
-        with open('/proc/meminfo', 'r') as f:
+        with open("/proc/meminfo", "r") as f:
             lines = f.readlines()
 
         mem_total = 0
         mem_available = 0
 
         for line in lines:
-            if line.startswith('MemTotal:'):
+            if line.startswith("MemTotal:"):
                 mem_total = int(line.split()[1]) // 1024  # Convert KB to MB
-            elif line.startswith('MemAvailable:'):
+            elif line.startswith("MemAvailable:"):
                 mem_available = int(line.split()[1]) // 1024
 
         mem_used = mem_total - mem_available
@@ -114,7 +167,7 @@ def get_disk_stats() -> Dict[str, Any]:
         Dictionary with disk usage in GB
     """
     try:
-        stat = os.statvfs('/')
+        stat = os.statvfs("/")
         total_gb = (stat.f_blocks * stat.f_frsize) / (1024**3)
         free_gb = (stat.f_bfree * stat.f_frsize) / (1024**3)
         used_gb = total_gb - free_gb
@@ -144,22 +197,23 @@ def get_thermal_zones() -> Dict[str, int]:
         Dictionary mapping thermal zone names to temperatures in Celsius
     """
     temps = {}
-    thermal_path = '/sys/class/thermal'
+    thermal_path = "/sys/class/thermal"
 
     try:
         if os.path.exists(thermal_path):
             for zone in os.listdir(thermal_path):
-                if zone.startswith('thermal_zone'):
-                    temp_file = os.path.join(thermal_path, zone, 'temp')
-                    type_file = os.path.join(thermal_path, zone, 'type')
+                if zone.startswith("thermal_zone"):
+                    temp_file = os.path.join(thermal_path, zone, "temp")
+                    type_file = os.path.join(thermal_path, zone, "type")
 
                     if os.path.exists(temp_file) and os.path.exists(type_file):
-                        with open(type_file, 'r') as f:
+                        with open(type_file, "r") as f:
                             zone_name = f.read().strip()
-                        with open(temp_file, 'r') as f:
-                            temp_millidegrees = int(f.read().strip())
-                            temp_celsius = temp_millidegrees // 1000
-                            temps[zone_name] = temp_celsius
+                        with open(temp_file, "r") as f:
+                            val = f.read().strip()
+                            if val:
+                                temp_celsius = int(val) // 1000
+                                temps[zone_name] = temp_celsius
     except Exception:
         pass
 
@@ -174,12 +228,11 @@ def get_jetson_model() -> str:
         Jetson model name or 'Unknown'
     """
     try:
-        model_path = '/sys/firmware/devicetree/base/model'
+        model_path = "/sys/firmware/devicetree/base/model"
         if os.path.exists(model_path):
-            with open(model_path, 'r') as f:
-                model = f.read().strip('\x00').strip()
-                # Extract relevant part (e.g., "NVIDIA Jetson AGX Orin")
-                if 'Jetson' in model:
+            with open(model_path, "r") as f:
+                model = f.read().strip("\x00").strip()
+                if "Jetson" in model:
                     return model
     except Exception:
         pass
@@ -204,11 +257,8 @@ def get_system_stats() -> Dict[str, Any]:
         "device_model": get_jetson_model(),
         "gpu": {
             "utilization_percent": gpu["utilization"],
-            "memory_used_mb": gpu["memory_used_mb"],
-            "memory_total_mb": gpu["memory_total_mb"],
-            "memory_utilization_percent": int(
-                100 * gpu["memory_used_mb"] / max(gpu["memory_total_mb"], 1)
-            ),
+            "cur_freq_mhz": gpu["cur_freq_mhz"],
+            "max_freq_mhz": gpu["max_freq_mhz"],
             "temperature_celsius": gpu["temperature_c"],
         },
         "cpu": {

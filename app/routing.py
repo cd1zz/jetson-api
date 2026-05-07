@@ -5,56 +5,45 @@ from .config import settings
 from .models import ChatMessage
 
 
-ModelName = Literal["deepseek-r1-7b", "qwen2.5-7b-instruct", "minicpm-v-2.5", "qwen2.5-vl-7b", "qwen3-embedding-8b"]
+ModelName = Literal[
+    "qwen2.5-7b-instruct",
+    "qwen2.5-coder-14b-instruct",
+    "qwen3-vl-8b",
+    "qwen3-embedding-8b",
+]
 
 
 AVAILABLE_MODELS = {
-    "deepseek-r1-7b": {
-        "name": "deepseek-r1-7b",
-        "base_url": None,  # Set dynamically from settings
-        "description": "DeepSeek R1 distilled on Qwen 7B (Q4_K_M quantization)",
-        "modality": "text",
-        "supports_vision": False,
-    },
     "qwen2.5-7b-instruct": {
         "name": "qwen2.5-7b-instruct",
         "base_url": None,  # Set dynamically from settings
-        "description": "Qwen 2.5 7B Instruct (Q4_K_M quantization)",
+        "description": "Qwen 2.5 7B Instruct text model (Q4_K_M quantization)",
         "modality": "text",
         "supports_vision": False,
     },
-    "minicpm-v-2.5": {
-        "name": "minicpm-v-2.5",
-        "base_url": None,  # Set dynamically from settings
-        "description": "MiniCPM-V 2.5 vision-language model (Q4_K_M quantization)",
-        "modality": "multimodal",
-        "supports_vision": True,
-    },
-    "qwen2.5-vl-7b": {
-        "name": "qwen2.5-vl-7b",
-        "base_url": None,  # Set dynamically from settings
-        "description": "Qwen 2.5 VL 7B vision-language model (Q4_K quantization)",
-        "modality": "multimodal",
-        "supports_vision": True,
-    },
-    "qwen3-embedding-8b": {
-        "name": "qwen3-embedding-8b",
-        "base_url": None,  # Set dynamically from settings
-        "description": "Qwen3 Embedding 8B for vector embeddings (Q5_K_M quantization, 4096 dims)",
-        "modality": "embedding",
+    "qwen2.5-coder-14b-instruct": {
+        "name": "qwen2.5-coder-14b-instruct",
+        "base_url": None,
+        "description": "Qwen 2.5 Coder 14B Instruct - code generation specialist (Q4_K_M)",
+        "modality": "text",
         "supports_vision": False,
+    },
+    "qwen3-vl-8b": {
+        "name": "qwen3-vl-8b",
+        "base_url": None,
+        "description": "Qwen3 VL 8B vision-language model with computer use capabilities (Q4_K_M quantization)",
+        "modality": "multimodal",
+        "supports_vision": True,
     },
 }
 
 
 def get_available_models() -> dict:
     """Get list of available models with their configurations."""
-    models = AVAILABLE_MODELS.copy()
-    models["deepseek-r1-7b"]["base_url"] = str(settings.deepseek_base_url)
+    models = {k: v.copy() for k, v in AVAILABLE_MODELS.items()}
     models["qwen2.5-7b-instruct"]["base_url"] = str(settings.qwen_base_url)
-    models["minicpm-v-2.5"]["base_url"] = str(settings.minicpm_v_base_url)
-    models["qwen2.5-vl-7b"]["base_url"] = str(settings.qwen2_5_vl_base_url)
-    models["qwen3-embedding-8b"]["base_url"] = str(settings.qwen3_embedding_base_url)
+    models["qwen2.5-coder-14b-instruct"]["base_url"] = str(settings.qwen_coder_base_url)
+    models["qwen3-vl-8b"]["base_url"] = str(settings.qwen3_vl_base_url)
     return models
 
 
@@ -71,14 +60,12 @@ def resolve_model_base_url(model: str) -> str:
     Raises:
         ValueError: If model is not supported
     """
-    if model == "deepseek-r1-7b":
-        return str(settings.deepseek_base_url)
     if model == "qwen2.5-7b-instruct":
         return str(settings.qwen_base_url)
-    if model == "minicpm-v-2.5":
-        return str(settings.minicpm_v_base_url)
-    if model == "qwen2.5-vl-7b":
-        return str(settings.qwen2_5_vl_base_url)
+    if model == "qwen2.5-coder-14b-instruct":
+        return str(settings.qwen_coder_base_url)
+    if model == "qwen3-vl-8b":
+        return str(settings.qwen3_vl_base_url)
     raise ValueError(f"Unsupported model: {model}")
 
 
@@ -127,38 +114,14 @@ def format_chat_prompt(messages: List[ChatMessage], model: str) -> str:
     Returns:
         Formatted prompt string
     """
-    if model == "deepseek-r1-7b":
-        return _format_deepseek_prompt(messages)
-    elif model == "qwen2.5-7b-instruct":
+    if model in ("qwen2.5-7b-instruct", "qwen2.5-coder-14b-instruct"):
         return _format_qwen_prompt(messages)
-    else:
-        # Fallback to generic format
-        return _format_generic_prompt(messages)
-
-
-def _format_deepseek_prompt(messages: List[ChatMessage]) -> str:
-    """
-    Format messages for DeepSeek R1 model.
-    Uses a simple format that works well with the model.
-    """
-    prompt_parts = []
-
-    for msg in messages:
-        if msg.role == "system":
-            prompt_parts.append(f"System: {msg.content}")
-        elif msg.role == "user":
-            prompt_parts.append(f"User: {msg.content}")
-        elif msg.role == "assistant":
-            prompt_parts.append(f"Assistant: {msg.content}")
-
-    # Add assistant prefix to prompt completion
-    prompt_parts.append("Assistant:")
-    return "\n\n".join(prompt_parts)
+    return _format_generic_prompt(messages)
 
 
 def _format_qwen_prompt(messages: List[ChatMessage]) -> str:
     """
-    Format messages for Qwen 2.5 model using its chat template.
+    Format messages for Qwen 2.5 family models using their chat template.
     Qwen uses <|im_start|> and <|im_end|> tokens.
     """
     prompt_parts = []
@@ -168,7 +131,6 @@ def _format_qwen_prompt(messages: List[ChatMessage]) -> str:
         content = msg.content
         prompt_parts.append(f"<|im_start|>{role}\n{content}<|im_end|>")
 
-    # Add assistant prefix
     prompt_parts.append("<|im_start|>assistant\n")
     return "\n".join(prompt_parts)
 

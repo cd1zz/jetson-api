@@ -186,7 +186,7 @@ async def check_backend_health(base_url: str) -> Dict[str, Any]:
     """
     base_url = base_url.rstrip('/')
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             # Try to hit the /health endpoint (if available) or /props
             health_url = f"{base_url}/health"
             props_url = f"{base_url}/props"
@@ -283,7 +283,7 @@ async def call_llama_server_vision(
     if req.stop:
         payload["stop"] = req.stop
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
@@ -361,7 +361,7 @@ async def stream_llama_server_vision(
     request_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
     created_at = int(time.time())
 
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         async with client.stream("POST", url, json=payload) as response:
             response.raise_for_status()
 
