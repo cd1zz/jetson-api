@@ -4,6 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jetson LLM Dashboard</title>
+    <script>
+        // Apply theme class synchronously to avoid flash-of-wrong-theme on load.
+        (function() {
+            try {
+                var saved = localStorage.getItem('theme');
+                var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (saved === 'dark' || (!saved && prefersDark)) {
+                    document.documentElement.classList.add('dark');
+                }
+            } catch (e) {}
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .status-dot {
@@ -41,15 +53,109 @@
             border-radius: 0.5rem;
             color: #e2e8f0;
             overflow-x: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
         }
 
         .response-box {
             min-height: 200px;
-            max-height: 500px;
+            max-height: 600px;
             overflow-y: auto;
+        }
+
+        .chat-turn {
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        .chat-turn:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .chat-turn .turn-role {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+        }
+        .chat-turn.user .turn-role { color: #2563eb; }
+        .chat-turn.assistant .turn-role { color: #16a34a; }
+        html.dark .chat-turn { border-bottom-color: rgba(71, 85, 105, 0.4); }
+        html.dark .chat-turn.user .turn-role { color: #60a5fa; }
+        html.dark .chat-turn.assistant .turn-role { color: #4ade80; }
+        .chat-turn .turn-image {
+            max-width: 240px;
+            max-height: 240px;
+            object-fit: contain;
+            border-radius: 0.375rem;
+            margin: 0.25rem 0 0.5rem;
+            display: block;
+        }
+        .chat-turn .turn-cursor::after {
+            content: '▌';
+            opacity: 0.6;
+            animation: blink 1s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .prose-segment {
             white-space: pre-wrap;
-            word-wrap: break-word;
+            word-break: break-word;
             overflow-wrap: break-word;
+            margin: 0.5rem 0;
+            line-height: 1.6;
+        }
+
+        .code-block {
+            position: relative;
+            margin: 0.75rem 0;
+        }
+
+        .code-block .code-lang {
+            position: absolute;
+            top: 0.5rem;
+            left: 1rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #94a3b8;
+            font-family: ui-monospace, monospace;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .code-block .copy-btn {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.5rem;
+            background: rgba(255, 255, 255, 0.08);
+            color: #e2e8f0;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 0.25rem;
+            padding: 0.2rem 0.55rem;
+            font-size: 0.7rem;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s, background 0.15s;
+        }
+
+        .code-block:hover .copy-btn,
+        .code-block .copy-btn:focus {
+            opacity: 1;
+        }
+
+        .code-block .copy-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .code-block .copy-btn.copied {
+            background: rgba(34, 197, 94, 0.4);
+            border-color: rgba(34, 197, 94, 0.6);
+            opacity: 1;
+        }
+
+        .code-block pre code {
+            padding-top: 1.75rem;
         }
 
         .image-preview {
@@ -93,6 +199,71 @@
         .close-modal:focus {
             color: #000;
         }
+
+        /* ===== Dark mode theme overrides ===== */
+        /* Activated by adding class="dark" to <html>. Uses higher specificity than
+           Tailwind's CDN utilities so we don't need !important spam. */
+        html.dark { color-scheme: dark; }
+        html.dark body { background-color: #0b1220; color: #e2e8f0; }
+
+        html.dark .bg-white { background-color: #1e293b; }
+        html.dark .bg-gray-50 { background-color: #0b1220; }
+        html.dark .bg-gray-100 { background-color: #334155; }
+        html.dark .bg-gray-200 { background-color: #475569; }
+
+        html.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.10); }
+        html.dark .bg-green-50 { background-color: rgba(34, 197, 94, 0.10); }
+        html.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.10); }
+        html.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.10); }
+        html.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.18); }
+        html.dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.18); }
+        html.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.18); }
+        html.dark .bg-yellow-100 { background-color: rgba(234, 179, 8, 0.18); }
+
+        html.dark .text-gray-900,
+        html.dark .text-gray-800 { color: #e2e8f0; }
+        html.dark .text-gray-700 { color: #cbd5e1; }
+        html.dark .text-gray-600 { color: #94a3b8; }
+        html.dark .text-gray-500 { color: #64748b; }
+        html.dark .text-gray-400 { color: #475569; }
+        html.dark .text-blue-900 { color: #93c5fd; }
+
+        html.dark .border-gray-200,
+        html.dark .border-gray-300,
+        html.dark .border-blue-200 { border-color: #334155; }
+        html.dark .divide-gray-200 > * + * { border-top-color: #334155; }
+
+        html.dark input[type="text"],
+        html.dark input[type="number"],
+        html.dark input[type="password"],
+        html.dark input[type="file"],
+        html.dark select,
+        html.dark textarea {
+            background-color: #0f172a;
+            border-color: #334155;
+            color: #e2e8f0;
+        }
+        html.dark input:focus,
+        html.dark select:focus,
+        html.dark textarea:focus {
+            border-color: #3b82f6;
+            outline: none;
+        }
+        html.dark input::placeholder,
+        html.dark textarea::placeholder { color: #64748b; }
+
+        html.dark .response-box { background-color: #0f172a; border-color: #334155; }
+
+        html.dark .modal { background-color: rgba(0, 0, 0, 0.7); }
+        html.dark .modal-content { background-color: #1e293b; color: #e2e8f0; }
+        html.dark .close-modal { color: #94a3b8; }
+        html.dark .close-modal:hover,
+        html.dark .close-modal:focus { color: #e2e8f0; }
+
+        html.dark thead.bg-gray-50 { background-color: #334155; }
+        html.dark tbody.bg-white { background-color: #1e293b; }
+
+        html.dark .prose-segment { color: #e2e8f0; }
     </style>
 </head>
 <body class="bg-gray-50">
@@ -103,7 +274,10 @@
                 <h1 class="text-4xl font-bold text-gray-900 mb-2">Jetson LLM Dashboard</h1>
                 <p class="text-gray-600">Monitor and test your local LLM models</p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-2 items-center">
+                <button id="themeToggle" onclick="toggleTheme()" title="Toggle dark mode" aria-label="Toggle dark mode" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-base font-medium transition">
+                    <span id="themeIcon">🌙</span>
+                </button>
                 <a href="/openapi.json" target="_blank" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
                     OpenAPI JSON
                 </a>
@@ -134,7 +308,7 @@
                     </div>
                 </div>
                 <div class="text-sm opacity-90">
-                    <span id="gpuMem">-- / -- MB</span>
+                    <span id="gpuFreq">-- / -- MHz</span>
                 </div>
             </div>
 
@@ -187,39 +361,11 @@
             </div>
         </div>
 
-        <!-- Embeddings Queue Status -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-2xl font-bold mb-4">Embeddings Queue Status</h2>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <!-- Slots Status -->
-                <div class="bg-gradient-to-br from-purple-500 to-pink-500 p-6 rounded-lg text-white">
-                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Active Slots</h3>
-                    <div class="text-4xl font-bold mb-2" id="queueSlots">-- / --</div>
-                    <div class="text-sm opacity-90">Processing requests</div>
-                </div>
-
-                <!-- Utilization -->
-                <div class="bg-gradient-to-br from-blue-500 to-cyan-500 p-6 rounded-lg text-white">
-                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Utilization</h3>
-                    <div class="text-4xl font-bold mb-2" id="queueUtil">--%</div>
-                    <div class="metric-bar">
-                        <div id="queueUtilBar" class="metric-fill" style="width: 0%"></div>
-                    </div>
-                </div>
-
-                <!-- Capacity Status -->
-                <div class="bg-gradient-to-br from-green-500 to-teal-500 p-6 rounded-lg text-white">
-                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Capacity</h3>
-                    <div class="text-3xl font-bold mb-2" id="queueCapacity">Available</div>
-                    <div class="text-sm opacity-90" id="queueIdleSlots">-- slots idle</div>
-                </div>
-
-                <!-- Active Tasks -->
-                <div class="bg-gradient-to-br from-orange-500 to-red-500 p-6 rounded-lg text-white">
-                    <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">Active Tasks</h3>
-                    <div class="text-4xl font-bold mb-2" id="queueTasks">0</div>
-                    <div class="text-sm opacity-90">Currently processing</div>
-                </div>
+        <!-- Backend Queue Status -->
+        <div id="queueStatusCard" class="bg-white rounded-lg shadow-lg p-6 mb-8 hidden">
+            <h2 class="text-2xl font-bold mb-4">Backend Queue Status</h2>
+            <div id="queueStatusContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Online backends populated here; offline ones are hidden -->
             </div>
         </div>
 
@@ -258,12 +404,12 @@
                         <div>
                             <p class="text-sm font-semibold mb-1">Request Body (Text):</p>
                             <pre class="text-xs"><code>{
-  "model": "deepseek-r1-7b",
+  "model": "qwen2.5-coder-14b-instruct",
   "messages": [
-    {"role": "user", "content": "Hello!"}
+    {"role": "user", "content": "Write a Python function to reverse a linked list."}
   ],
   "max_tokens": 512,
-  "temperature": 0.7,
+  "temperature": 0.2,
   "stream": false
 }</code></pre>
                         </div>
@@ -271,7 +417,7 @@
                         <div>
                             <p class="text-sm font-semibold mb-1">Request Body (Vision - with image):</p>
                             <pre class="text-xs"><code>{
-  "model": "qwen2.5-vl-7b",
+  "model": "qwen3-vl-8b",
   "messages": [
     {
       "role": "user",
@@ -292,7 +438,7 @@
   "id": "chatcmpl-123",
   "object": "chat.completion",
   "created": 1677652288,
-  "model": "deepseek-r1-7b",
+  "model": "qwen2.5-coder-14b-instruct",
   "choices": [{
     "index": 0,
     "message": {
@@ -321,7 +467,7 @@
   "object": "list",
   "data": [
     {
-      "id": "deepseek-r1-7b",
+      "id": "qwen2.5-coder-14b-instruct",
       "object": "model",
       "created": 0,
       "owned_by": "jetson-api"
@@ -385,8 +531,8 @@
                             <pre class="text-xs"><code>{
   "status": "healthy",
   "models": {
-    "deepseek-r1-7b": {
-      "base_url": "http://127.0.0.1:8081",
+    "qwen2.5-coder-14b-instruct": {
+      "base_url": "http://127.0.0.1:8083",
       "status": "healthy",
       "response_time_ms": 5.2
     }
@@ -435,15 +581,15 @@ client = OpenAI(
     api_key="change-me-to-a-secure-key"
 )
 
-# Text completion
+# Text / code completion
 response = client.chat.completions.create(
-    model="deepseek-r1-7b",
-    messages=[{"role": "user", "content": "Hello!"}]
+    model="qwen2.5-coder-14b-instruct",
+    messages=[{"role": "user", "content": "Write a Python function to reverse a linked list."}]
 )
 
 # Vision completion
 response = client.chat.completions.create(
-    model="qwen2.5-vl-7b",
+    model="qwen3-vl-8b",
     messages=[{
         "role": "user",
         "content": [
@@ -510,7 +656,7 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
 
         <!-- Interactive Chat Interface -->
         <div class="bg-white rounded-lg shadow-lg p-6">
-            <h2 class="text-2xl font-bold mb-4">Test Model</h2>
+            <h2 class="text-2xl font-bold mb-4">Chat</h2>
 
             <!-- Model Selection -->
             <div class="mb-4">
@@ -553,7 +699,7 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Max Tokens</label>
-                    <input type="number" id="maxTokens" value="512" min="1" max="4096" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                    <input type="number" id="maxTokens" value="512" min="1" max="8192" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Temperature</label>
@@ -567,23 +713,29 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                 </div>
             </div>
 
-            <!-- Send Button -->
-            <button id="sendButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200">
-                Send
-            </button>
+            <!-- Action Buttons -->
+            <div class="flex gap-2">
+                <button id="sendButton" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200">
+                    Send
+                </button>
+                <button id="newChatButton" type="button" class="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded-lg transition duration-200" title="Clear conversation history">
+                    New Chat
+                </button>
+            </div>
 
-            <!-- Response Area -->
+            <!-- Conversation Area -->
             <div class="mt-6">
                 <div class="flex justify-between items-center mb-2">
-                    <h3 class="text-lg font-semibold">Response</h3>
+                    <h3 class="text-lg font-semibold">Conversation</h3>
                     <div class="text-sm text-gray-600">
+                        <span id="turnCount" class="mr-3 hidden"><span id="turnCountValue">0</span> turns</span>
                         <span id="tokenStats" class="hidden">
                             Tokens: <span id="promptTokens">0</span> + <span id="completionTokens">0</span> = <span id="totalTokens">0</span>
                         </span>
                     </div>
                 </div>
-                <div id="responseBox" class="response-box bg-gray-50 rounded-lg p-4 border border-gray-200">
-                    <p class="text-gray-500 italic">Response will appear here...</p>
+                <div id="conversationBox" class="response-box bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p class="text-gray-500 italic">Your conversation will appear here. Follow-up messages share the same context until you click "New Chat".</p>
                 </div>
             </div>
         </div>
@@ -598,9 +750,25 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
         let models = {};
         let selectedImage = null;
         let selectedImageData = null;
+        // Multi-turn chat state. Each entry is the message object we send to /v1/chat/completions
+        // (role + content). For vision turns, content is the array form with text + image_url.
+        let conversationHistory = [];
+
+        // Theme toggle (persisted in localStorage; synced with OS preference on first load)
+        function syncThemeIcon() {
+            const icon = document.getElementById('themeIcon');
+            if (!icon) return;
+            icon.textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+        }
+        function toggleTheme() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch (e) {}
+            syncThemeIcon();
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            syncThemeIcon();
             loadModels();
             updateSystemMetrics();
             updateQueueStatus();
@@ -618,6 +786,15 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             document.getElementById('imageUpload').addEventListener('change', onImageSelected);
             document.getElementById('clearImage').addEventListener('click', clearImage);
             document.getElementById('sendButton').addEventListener('click', sendRequest);
+            document.getElementById('newChatButton').addEventListener('click', startNewChat);
+
+            // Cmd/Ctrl+Enter submits the prompt; plain Enter still inserts newlines.
+            document.getElementById('promptInput').addEventListener('keydown', (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!document.getElementById('sendButton').disabled) sendRequest();
+                }
+            });
         });
 
         // Load available models
@@ -649,42 +826,143 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             }
         }
 
-        // Check model health
+        // Combined service-control + backend-health state per model
+        let modelControlState = {};
+        let pendingControlActions = {};
+
         async function checkModelHealth() {
             const statusDiv = document.getElementById('modelStatus');
 
             try {
-                const response = await fetch(`${API_BASE}/v1/models`, {
-                    headers: {
-                        'Authorization': `Bearer ${API_KEY}`
-                    }
-                });
-                const data = await response.json();
+                const [controlRes, healthRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/models/control`),
+                    fetch(`${API_BASE}/health`),
+                ]);
+                const controlData = await controlRes.json();
+                const healthData = await healthRes.json();
+
+                modelControlState = {};
+                controlData.models.forEach(m => { modelControlState[m.id] = m; });
 
                 statusDiv.innerHTML = '';
-                data.data.forEach(model => {
+                for (const m of controlData.models) {
+                    const health = (healthData.models && healthData.models[m.id]) || null;
+                    const isHealthy = health && health.status === 'healthy';
+                    const isPending = pendingControlActions[m.id];
+                    const isActive = m.state === 'active';
+                    const isStopped = m.state === 'inactive';
+                    const isFailed = m.state === 'failed';
+                    const isLoading = isActive && !isHealthy;
+
+                    let statusClass, borderClass, label;
+                    if (isPending) {
+                        statusClass = 'status-checking';
+                        borderClass = 'border-blue-200 bg-blue-50';
+                        label = isPending === 'start' ? 'Starting...' : 'Stopping...';
+                    } else if (isHealthy) {
+                        statusClass = 'status-online';
+                        borderClass = 'border-green-200';
+                        label = 'Running';
+                    } else if (isLoading) {
+                        statusClass = 'status-checking';
+                        borderClass = 'border-yellow-200 bg-yellow-50';
+                        label = 'Loading...';
+                    } else if (isStopped) {
+                        statusClass = 'status-offline';
+                        borderClass = 'border-gray-200 bg-gray-50';
+                        label = 'Stopped';
+                    } else if (isFailed) {
+                        statusClass = 'status-offline';
+                        borderClass = 'border-red-300 bg-red-50';
+                        label = 'Failed';
+                    } else {
+                        statusClass = 'status-checking';
+                        borderClass = 'border-yellow-200 bg-yellow-50';
+                        label = m.state.charAt(0).toUpperCase() + m.state.slice(1);
+                    }
+
+                    const showStop = !isPending && (isActive || isFailed);
+                    const showStart = !isPending && (isStopped || isFailed);
+                    let buttonHtml;
+                    if (isPending) {
+                        buttonHtml = `<button disabled class="text-xs px-2 py-1 bg-gray-100 text-gray-500 border border-gray-200 rounded cursor-wait">…</button>`;
+                    } else if (showStop) {
+                        buttonHtml = `<button onclick="controlModel('${m.id}', 'stop')" class="text-xs px-2 py-1 bg-white hover:bg-red-50 text-red-700 border border-red-300 rounded font-medium">Stop</button>`;
+                    } else if (showStart) {
+                        buttonHtml = `<button onclick="controlModel('${m.id}', 'start')" class="text-xs px-2 py-1 bg-white hover:bg-green-50 text-green-700 border border-green-300 rounded font-medium">Start</button>`;
+                    } else {
+                        buttonHtml = '';
+                    }
+
                     const card = document.createElement('div');
-                    card.className = 'border border-gray-200 rounded-lg p-4';
+                    card.className = `border rounded-lg p-4 ${borderClass}`;
                     card.innerHTML = `
-                        <div class="flex items-center mb-2">
-                            <span class="status-dot status-online"></span>
-                            <span class="font-semibold">${model.id}</span>
+                        <div class="flex items-center justify-between mb-2 gap-2">
+                            <div class="flex items-center min-w-0">
+                                <span class="status-dot ${statusClass}"></span>
+                                <span class="font-semibold text-sm truncate" title="${m.id}">${m.id}</span>
+                            </div>
+                            ${buttonHtml}
                         </div>
-                        <p class="text-sm text-gray-600">${getModelDescription(model.id)}</p>
+                        <p class="text-sm text-gray-600">${getModelDescription(m.id)}</p>
+                        <p class="text-xs text-gray-400 mt-1">${label} · ~${m.approx_ram_gb} GB RAM</p>
                     `;
                     statusDiv.appendChild(card);
-                });
+                }
+
+                updateModelDropdownAvailability();
             } catch (error) {
-                console.error('Error checking model health:', error);
+                console.error('Error checking model status:', error);
             }
+        }
+
+        async function controlModel(modelId, action) {
+            const m = modelControlState[modelId];
+            if (action === 'stop') {
+                const ramHint = m ? `~${m.approx_ram_gb} GB RAM` : 'memory';
+                if (!confirm(`Stop ${modelId}?\n\nThis will free ${ramHint} and interrupt any in-flight requests. Restarting takes 30–60 s while the model reloads.`)) {
+                    return;
+                }
+            }
+
+            pendingControlActions[modelId] = action;
+            checkModelHealth();
+
+            try {
+                const response = await fetch(`${API_BASE}/api/models/${encodeURIComponent(modelId)}/${action}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${API_KEY}` },
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    alert(`Failed to ${action} ${modelId}: ${err.detail || response.statusText}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                delete pendingControlActions[modelId];
+                checkModelHealth();
+            }
+        }
+
+        function updateModelDropdownAvailability() {
+            const select = document.getElementById('modelSelect');
+            if (!select) return;
+            Array.from(select.options).forEach(option => {
+                if (!option.value) return;
+                const m = modelControlState[option.value];
+                if (!m) return;
+                const isStopped = m.state !== 'active';
+                option.disabled = isStopped;
+                option.textContent = isStopped ? `${option.value} (stopped)` : option.value;
+            });
         }
 
         function getModelDescription(modelId) {
             const descriptions = {
-                'deepseek-r1-7b': 'Text - DeepSeek R1 7B',
                 'qwen2.5-7b-instruct': 'Text - Qwen 2.5 7B',
-                'minicpm-v-2.5': 'Vision - MiniCPM-V 2.5',
-                'qwen2.5-vl-7b': 'Vision - Qwen 2.5 VL 7B',
+                'qwen2.5-coder-14b-instruct': 'Code - Qwen 2.5 Coder 14B',
+                'qwen3-vl-8b': 'Vision - Qwen3 VL 8B (Computer Use)',
                 'qwen3-embedding-8b': 'Embeddings - Qwen3 8B (4096 dims)'
             };
             return descriptions[modelId] || 'LLM Model';
@@ -815,10 +1093,13 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                 const data = await response.json();
 
                 // GPU
-                document.getElementById('gpuTemp').textContent = `${data.gpu.temperature_celsius}°C`;
+                const gpuTemp = data.gpu.temperature_celsius;
+                document.getElementById('gpuTemp').textContent = gpuTemp ? `${gpuTemp}°C` : '--°C';
                 document.getElementById('gpuUtil').textContent = `${data.gpu.utilization_percent}%`;
                 document.getElementById('gpuUtilBar').style.width = `${data.gpu.utilization_percent}%`;
-                document.getElementById('gpuMem').textContent = `${data.gpu.memory_used_mb} / ${data.gpu.memory_total_mb} MB`;
+                const curFreq = data.gpu.cur_freq_mhz || 0;
+                const maxFreq = data.gpu.max_freq_mhz || 0;
+                document.getElementById('gpuFreq').textContent = `${curFreq} / ${maxFreq} MHz`;
 
                 // CPU
                 document.getElementById('cpuUtil').textContent = `${data.cpu.utilization_percent}%`;
@@ -840,44 +1121,64 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             }
         }
 
-        // Update queue status
+        // Render queue cards for currently-running backends only.
+        // Offline backends are filtered out so we don't show stale rows for
+        // models that aren't loaded.
         async function updateQueueStatus() {
+            const card = document.getElementById('queueStatusCard');
+            const container = document.getElementById('queueStatusContainer');
             try {
                 const response = await fetch(`${API_BASE}/api/queue-status`);
                 const data = await response.json();
+                const online = Object.entries(data.backends || {})
+                    .filter(([, info]) => info.status === 'online');
 
-                // Active Slots
-                document.getElementById('queueSlots').textContent = `${data.busy_slots} / ${data.total_slots}`;
-
-                // Utilization
-                document.getElementById('queueUtil').textContent = `${data.utilization_percent}%`;
-                document.getElementById('queueUtilBar').style.width = `${data.utilization_percent}%`;
-
-                // Capacity Status
-                const capacityEl = document.getElementById('queueCapacity');
-                const idleSlotsEl = document.getElementById('queueIdleSlots');
-
-                if (data.at_capacity) {
-                    capacityEl.textContent = 'At Capacity';
-                    capacityEl.parentElement.className = 'bg-gradient-to-br from-red-500 to-orange-500 p-6 rounded-lg text-white';
-                } else {
-                    capacityEl.textContent = 'Available';
-                    capacityEl.parentElement.className = 'bg-gradient-to-br from-green-500 to-teal-500 p-6 rounded-lg text-white';
+                if (online.length === 0) {
+                    card.classList.add('hidden');
+                    return;
                 }
+                card.classList.remove('hidden');
 
-                idleSlotsEl.textContent = `${data.idle_slots} slots idle`;
-
-                // Active Tasks
-                document.getElementById('queueTasks').textContent = data.active_tasks.length;
+                container.innerHTML = online.map(([modelId, info]) => {
+                    const busy = info.busy_slots || 0;
+                    const total = info.total_slots || 0;
+                    const idle = info.idle_slots || 0;
+                    const util = info.utilization_percent || 0;
+                    const gradient = info.at_capacity
+                        ? 'from-red-500 to-orange-500'
+                        : 'from-purple-500 to-pink-500';
+                    const detail = info.at_capacity ? 'At capacity' : `${idle} idle`;
+                    return `
+                        <div class="bg-gradient-to-br ${gradient} p-6 rounded-lg text-white">
+                            <h3 class="text-sm font-semibold uppercase opacity-90 mb-2">${modelId}</h3>
+                            <div class="text-3xl font-bold mb-2">${busy} / ${total} slots</div>
+                            <div class="metric-bar mb-2">
+                                <div class="metric-fill" style="width: ${util}%"></div>
+                            </div>
+                            <div class="text-sm opacity-90">${detail} &middot; ${util}% util</div>
+                        </div>
+                    `;
+                }).join('');
             } catch (error) {
                 console.error('Error updating queue status:', error);
+                card.classList.add('hidden');
             }
         }
 
         // Model selection handler
+        // Per-model recommended defaults (applied when the dropdown selection changes).
+        // temperature: low for code (deterministic), higher for chat/vision.
+        // maxTokens: balance latency vs typical answer length; below the model's hard ceiling.
+        const MODEL_DEFAULTS = {
+            'qwen2.5-coder-14b-instruct': { temperature: 0.1, maxTokens: 2048 },
+            'qwen2.5-7b-instruct':        { temperature: 0.7, maxTokens: 1024 },
+            'qwen3-vl-8b':                { temperature: 0.5, maxTokens: 1024 },
+        };
+        const FALLBACK_DEFAULTS = { temperature: 0.7, maxTokens: 512 };
+
         function onModelChange(e) {
             const modelId = e.target.value;
-            const isVision = modelId.includes('minicpm-v') || modelId.includes('vl');
+            const isVision = modelId.includes('vl');
 
             const imageSection = document.getElementById('imageUploadSection');
             if (isVision) {
@@ -885,6 +1186,14 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             } else {
                 imageSection.classList.add('hidden');
                 clearImage();
+            }
+
+            // Apply recommended defaults for the selected model.
+            // Always overwrites — the playground convention is "selecting a model = load its defaults".
+            if (modelId) {
+                const defaults = MODEL_DEFAULTS[modelId] || FALLBACK_DEFAULTS;
+                document.getElementById('temperature').value = defaults.temperature;
+                document.getElementById('maxTokens').value = defaults.maxTokens;
             }
         }
 
@@ -913,6 +1222,65 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             document.getElementById('clearImage').classList.add('hidden');
         }
 
+        // ---- Conversation rendering ----
+        function modelLabel(modelId) {
+            return (models[modelId] && models[modelId].name) || modelId || 'Assistant';
+        }
+
+        function renderConversation() {
+            const box = document.getElementById('conversationBox');
+            if (conversationHistory.length === 0) {
+                box.innerHTML = '<p class="text-gray-500 italic">Your conversation will appear here. Follow-up messages share the same context until you click "New Chat".</p>';
+                document.getElementById('turnCount').classList.add('hidden');
+                return;
+            }
+
+            const stickyBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+
+            const parts = [];
+            conversationHistory.forEach((msg, idx) => {
+                parts.push(renderTurn(msg, idx));
+            });
+            box.innerHTML = parts.join('');
+
+            const userTurns = conversationHistory.filter(m => m.role === 'user').length;
+            const turnCount = document.getElementById('turnCount');
+            turnCount.classList.remove('hidden');
+            document.getElementById('turnCountValue').textContent = userTurns;
+
+            if (stickyBottom) box.scrollTop = box.scrollHeight;
+        }
+
+        function renderTurn(msg, idx) {
+            const isUser = msg.role === 'user';
+            const roleLabel = isUser ? 'You' : modelLabel(msg.modelId);
+            const cursorClass = msg.streaming ? ' turn-cursor' : '';
+
+            let bodyHtml = '';
+            if (Array.isArray(msg.content)) {
+                // Vision-style content: text + image
+                msg.content.forEach(part => {
+                    if (part.type === 'text' && part.text) {
+                        bodyHtml += renderMarkdownResponse(part.text);
+                    } else if (part.type === 'image_url' && part.image_url && part.image_url.url) {
+                        bodyHtml += `<img class="turn-image" src="${part.image_url.url}" alt="attached image">`;
+                    }
+                });
+            } else {
+                bodyHtml = renderMarkdownResponse(msg.content || '');
+            }
+
+            return `<div class="chat-turn ${isUser ? 'user' : 'assistant'}" data-idx="${idx}">`
+                 + `<div class="turn-role">${escapeHtml(roleLabel)}</div>`
+                 + `<div class="turn-body${cursorClass}">${bodyHtml}</div>`
+                 + `</div>`;
+        }
+
+        // Build the messages payload to send: strip our internal flags before sending.
+        function buildMessagesPayload() {
+            return conversationHistory.map(({ role, content }) => ({ role, content }));
+        }
+
         // Send request
         async function sendRequest() {
             const modelId = document.getElementById('modelSelect').value;
@@ -930,50 +1298,54 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             sendButton.disabled = true;
             sendButton.textContent = 'Sending...';
 
-            const responseBox = document.getElementById('responseBox');
-            responseBox.innerHTML = '<p class="text-gray-500">Waiting for response...</p>';
+            // Append the user turn to the conversation immediately so it shows up.
+            const userMessage = selectedImageData
+                ? {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: prompt },
+                        { type: 'image_url', image_url: { url: selectedImageData } }
+                    ]
+                }
+                : { role: 'user', content: prompt };
+            conversationHistory.push(userMessage);
+
+            // Append a placeholder assistant turn that streaming/non-streaming will fill in.
+            const assistantMessage = { role: 'assistant', content: '', modelId, streaming: true };
+            conversationHistory.push(assistantMessage);
+
+            // Clear the prompt input so the user can type a follow-up.
+            document.getElementById('promptInput').value = '';
+            // Image was attached to the user turn already; clear it so it isn't duplicated.
+            if (selectedImageData) clearImage();
+
+            renderConversation();
 
             try {
-                // Build messages
-                const messages = [];
-
-                if (selectedImageData) {
-                    messages.push({
-                        role: 'user',
-                        content: [
-                            { type: 'text', text: prompt },
-                            { type: 'image_url', image_url: { url: selectedImageData } }
-                        ]
-                    });
-                } else {
-                    messages.push({
-                        role: 'user',
-                        content: prompt
-                    });
-                }
-
                 const requestBody = {
                     model: modelId,
-                    messages: messages,
+                    messages: buildMessagesPayload(),
                     max_tokens: maxTokens,
                     temperature: temperature,
                     stream: stream
                 };
 
                 if (stream) {
-                    await handleStreamingResponse(requestBody);
+                    await handleStreamingResponse(requestBody, assistantMessage);
                 } else {
-                    await handleNonStreamingResponse(requestBody);
+                    await handleNonStreamingResponse(requestBody, assistantMessage);
                 }
             } catch (error) {
-                responseBox.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+                assistantMessage.content = `**Error:** ${error.message}`;
             } finally {
+                assistantMessage.streaming = false;
+                renderConversation();
                 sendButton.disabled = false;
                 sendButton.textContent = 'Send';
             }
         }
 
-        async function handleNonStreamingResponse(requestBody) {
+        async function handleNonStreamingResponse(requestBody, assistantMessage) {
             const response = await fetch(`${API_BASE}/v1/chat/completions`, {
                 method: 'POST',
                 headers: {
@@ -988,11 +1360,8 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             }
 
             const data = await response.json();
-            const content = data.choices[0].message.content;
+            assistantMessage.content = data.choices[0].message.content;
 
-            document.getElementById('responseBox').innerHTML = `<pre><code>${escapeHtml(content)}</code></pre>`;
-
-            // Update token stats
             if (data.usage) {
                 document.getElementById('tokenStats').classList.remove('hidden');
                 document.getElementById('promptTokens').textContent = data.usage.prompt_tokens;
@@ -1001,7 +1370,7 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             }
         }
 
-        async function handleStreamingResponse(requestBody) {
+        async function handleStreamingResponse(requestBody, assistantMessage) {
             const response = await fetch(`${API_BASE}/v1/chat/completions`, {
                 method: 'POST',
                 headers: {
@@ -1019,8 +1388,16 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             const decoder = new TextDecoder();
             let accumulatedText = '';
 
-            document.getElementById('responseBox').innerHTML = '<pre><code></code></pre>';
-            const codeElement = document.getElementById('responseBox').querySelector('code');
+            let pendingRender = false;
+            const scheduleRender = () => {
+                if (pendingRender) return;
+                pendingRender = true;
+                requestAnimationFrame(() => {
+                    pendingRender = false;
+                    assistantMessage.content = accumulatedText;
+                    renderConversation();
+                });
+            };
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -1039,7 +1416,7 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                             const delta = parsed.choices[0].delta;
                             if (delta.content) {
                                 accumulatedText += delta.content;
-                                codeElement.textContent = accumulatedText;
+                                scheduleRender();
                             }
                         } catch (e) {
                             // Skip invalid JSON
@@ -1047,12 +1424,81 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                     }
                 }
             }
+            assistantMessage.content = accumulatedText;
+        }
+
+        function startNewChat() {
+            conversationHistory = [];
+            document.getElementById('promptInput').value = '';
+            document.getElementById('tokenStats').classList.add('hidden');
+            clearImage();
+            renderConversation();
         }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function renderMarkdownResponse(text) {
+            if (!text) return '';
+
+            const parts = [];
+            const fenceRegex = /```([\w+-]*)\n?([\s\S]*?)```/g;
+            let lastIndex = 0;
+            let match;
+
+            const pushProse = (segment) => {
+                if (!segment) return;
+                if (segment.replace(/\s/g, '').length === 0) return;
+                parts.push(`<div class="prose-segment">${escapeHtml(segment)}</div>`);
+            };
+
+            const pushCodeBlock = (lang, code, complete) => {
+                const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
+                const copyBtn = complete
+                    ? `<button class="copy-btn" type="button" onclick="copyCodeBlock(this)">Copy</button>`
+                    : '';
+                parts.push(
+                    `<div class="code-block">${langLabel}${copyBtn}` +
+                    `<pre><code>${escapeHtml(code)}</code></pre></div>`
+                );
+            };
+
+            while ((match = fenceRegex.exec(text)) !== null) {
+                pushProse(text.slice(lastIndex, match.index));
+                pushCodeBlock(match[1] || '', match[2], true);
+                lastIndex = fenceRegex.lastIndex;
+            }
+
+            const tail = text.slice(lastIndex);
+            const unclosed = /```([\w+-]*)\n?([\s\S]*)$/.exec(tail);
+            if (unclosed) {
+                pushProse(tail.slice(0, unclosed.index));
+                pushCodeBlock(unclosed[1] || '', unclosed[2], false);
+            } else {
+                pushProse(tail);
+            }
+
+            return parts.length > 0
+                ? parts.join('')
+                : `<div class="prose-segment">${escapeHtml(text)}</div>`;
+        }
+
+        function copyCodeBlock(button) {
+            const code = button.parentElement.querySelector('code').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                button.classList.add('copied');
+                button.textContent = 'Copied';
+                setTimeout(() => {
+                    button.classList.remove('copied');
+                    button.textContent = 'Copy';
+                }, 1500);
+            }).catch(() => {
+                button.textContent = 'Failed';
+                setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+            });
         }
     </script>
 </body>
