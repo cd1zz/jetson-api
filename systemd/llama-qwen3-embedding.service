@@ -1,5 +1,5 @@
 [Unit]
-Description=llama.cpp server for Qwen3 Embedding 8B (embeddings)
+Description=llama.cpp server for Qwen3 Embedding 8B (embeddings, port 8087)
 After=network.target
 
 [Service]
@@ -7,14 +7,18 @@ Type=simple
 User=%USER%
 WorkingDirectory=%HOME%/llama.cpp
 Environment="CUDA_VISIBLE_DEVICES=0"
+LimitMEMLOCK=infinity
 ExecStart=%HOME%/llama.cpp/build/bin/llama-server \
-    --model %HOME%/models/qwen3-embedding-8b/Qwen3-Embedding-8B-Q5_K_M.gguf \
+    --model /mnt/nvme/models/qwen3-embedding-8b/Qwen3-Embedding-8B-Q4_K_M.gguf \
     --ctx-size 8192 \
-    --port 8085 \
+    --port 8087 \
     --n-gpu-layers 99 \
     --threads %NPROC% \
     --host 127.0.0.1 \
-    --embeddings
+    --embeddings \
+    --pooling last \
+    --mlock \
+    --alias qwen3-embedding-8b
 Restart=always
 RestartSec=10
 StandardOutput=journal

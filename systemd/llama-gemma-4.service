@@ -1,5 +1,5 @@
 [Unit]
-Description=llama.cpp server for Qwen3-VL-8B (Vision)
+Description=llama.cpp server for Gemma 4 26B-A4B (MoE, multimodal, port 8086)
 After=network.target
 
 [Service]
@@ -9,10 +9,10 @@ WorkingDirectory=%HOME%/llama.cpp
 Environment="CUDA_VISIBLE_DEVICES=0"
 LimitMEMLOCK=infinity
 ExecStart=%HOME%/llama.cpp/build/bin/llama-server \
-    --model /mnt/nvme/models/qwen3-vl-8b/Qwen3VL-8B-Instruct-Q4_K_M.gguf \
-    --mmproj /mnt/nvme/models/qwen3-vl-8b/mmproj-Qwen3VL-8B-Instruct-F16.gguf \
+    --model /mnt/nvme/models/gemma-4-26b-a4b-it/gemma-4-26B-A4B-it-Q4_K_M.gguf \
+    --mmproj /mnt/nvme/models/gemma-4-26b-a4b-it/mmproj-gemma-4-26B-A4B-it-bf16.gguf \
     --ctx-size 32768 \
-    --port 8084 \
+    --port 8086 \
     --n-gpu-layers 99 \
     --threads %NPROC% \
     --host 127.0.0.1 \
@@ -21,7 +21,7 @@ ExecStart=%HOME%/llama.cpp/build/bin/llama-server \
     --batch-size 2048 \
     --ubatch-size 2048 \
     --parallel 1 \
-    --alias qwen3-vl-8b
+    --alias gemma-4-26b-a4b-it
 Restart=always
 RestartSec=10
 StandardOutput=journal

@@ -47,8 +47,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     logger.info("Starting Jetson LLM API")
-    logger.info(f"Qwen backend: {settings.qwen_base_url}")
     logger.info(f"Qwen Coder backend: {settings.qwen_coder_base_url}")
+    logger.info(f"Qwen3-VL backend: {settings.qwen3_vl_base_url}")
+    logger.info(f"UI-TARS backend: {settings.ui_tars_base_url}")
+    logger.info(f"Gemma 4 backend: {settings.gemma_4_base_url}")
+    logger.info(f"Qwen3 Embedding backend: {settings.qwen3_embedding_base_url}")
     yield
     logger.info("Shutting down Jetson LLM API")
 
@@ -328,12 +331,10 @@ async def clear_activity_logs(_: None = Depends(verify_api_key)):
         )
 
 
+# Systemd-managed llama.cpp services that the dashboard can start/stop.
+# UI-TARS-1.5-7B is intentionally absent: it runs as a Docker container (vLLM),
+# not a systemd unit, and is managed separately via /mnt/nvme/models/ui-tars-1.5-7b-bf16/launch.sh.
 MANAGED_SERVICES = {
-    "qwen2.5-7b-instruct": {
-        "service": "llama-qwen.service",
-        "label": "Qwen 2.5 7B Instruct",
-        "approx_ram_gb": 5,
-    },
     "qwen2.5-coder-14b-instruct": {
         "service": "llama-qwen-coder.service",
         "label": "Qwen 2.5 Coder 14B",
@@ -341,8 +342,13 @@ MANAGED_SERVICES = {
     },
     "qwen3-vl-8b": {
         "service": "llama-qwen3-vl.service",
-        "label": "Qwen3 VL 8B",
+        "label": "Qwen3-VL 8B (Vision)",
         "approx_ram_gb": 8,
+    },
+    "gemma-4-26b-a4b-it": {
+        "service": "llama-gemma-4.service",
+        "label": "Gemma 4 26B-A4B MoE",
+        "approx_ram_gb": 18,
     },
     "qwen3-embedding-8b": {
         "service": "llama-qwen3-embedding.service",
@@ -435,20 +441,38 @@ async def get_queue_status():
     dashboard can hide cards for models that aren't currently running.
     """
     backends = {
-        "qwen2.5-7b-instruct": str(settings.qwen_base_url).rstrip('/'),
         "qwen2.5-coder-14b-instruct": str(settings.qwen_coder_base_url).rstrip('/'),
         "qwen3-vl-8b": str(settings.qwen3_vl_base_url).rstrip('/'),
+        "ui-tars-1.5-7b": str(settings.ui_tars_base_url).rstrip('/'),
+        "gemma-4-26b-a4b-it": str(settings.gemma_4_base_url).rstrip('/'),
         "qwen3-embedding-8b": str(settings.qwen3_embedding_base_url).rstrip('/'),
     }
 
     async def probe(model_id: str, base_url: str) -> tuple[str, dict]:
+        # llama.cpp exposes /slots; vLLM does not. Try /slots first for capacity,
+        # fall back to /health so vLLM-backed models (UI-TARS) report online too.
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 response = await client.get(f"{base_url}/slots")
                 response.raise_for_status()
                 slots_data = response.json()
         except Exception:
-            return model_id, {"backend_url": base_url, "status": "offline"}
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    response = await client.get(f"{base_url}/health")
+                    response.raise_for_status()
+                return model_id, {
+                    "backend_url": base_url,
+                    "status": "online",
+                    "total_slots": None,
+                    "busy_slots": None,
+                    "idle_slots": None,
+                    "utilization_percent": None,
+                    "at_capacity": False,
+                    "note": "backend does not expose /slots (e.g. vLLM)",
+                }
+            except Exception:
+                return model_id, {"backend_url": base_url, "status": "offline"}
 
         total_slots = len(slots_data)
         busy_slots = sum(1 for slot in slots_data if slot.get("is_processing", False))

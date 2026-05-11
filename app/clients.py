@@ -185,21 +185,27 @@ async def check_backend_health(base_url: str) -> Dict[str, Any]:
         Health status dictionary
     """
     base_url = base_url.rstrip('/')
+
+    def _safe_details(resp):
+        # vLLM's /health returns an empty 200; llama.cpp returns JSON.
+        try:
+            return resp.json()
+        except Exception:
+            return {"status": "ok"}
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            # Try to hit the /health endpoint (if available) or /props
             health_url = f"{base_url}/health"
             props_url = f"{base_url}/props"
 
             try:
                 response = await client.get(health_url)
                 response.raise_for_status()
-                return {"status": "healthy", "details": response.json()}
+                return {"status": "healthy", "details": _safe_details(response)}
             except httpx.HTTPError:
-                # Fallback to /props endpoint
                 response = await client.get(props_url)
                 response.raise_for_status()
-                return {"status": "healthy", "details": response.json()}
+                return {"status": "healthy", "details": _safe_details(response)}
 
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}

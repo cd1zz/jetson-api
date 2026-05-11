@@ -746,6 +746,9 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
         // Multi-turn chat state. Each entry is the message object we send to /v1/chat/completions
         // (role + content). For vision turns, content is the array form with text + image_url.
         let conversationHistory = [];
+        // AbortController for the in-flight chat request, so the user can halt streaming or
+        // a hung non-streaming call from the Stop button.
+        let activeAbortController = null;
 
         // Theme toggle (persisted in localStorage; synced with OS preference on first load)
         function syncThemeIcon() {
@@ -782,10 +785,11 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             document.getElementById('newChatButton').addEventListener('click', startNewChat);
 
             // Cmd/Ctrl+Enter submits the prompt; plain Enter still inserts newlines.
+            // Suppress during an in-flight request so the Stop button isn't double-fired.
             document.getElementById('promptInput').addEventListener('keydown', (e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                     e.preventDefault();
-                    if (!document.getElementById('sendButton').disabled) sendRequest();
+                    if (!activeAbortController) sendRequest();
                 }
             });
         });
@@ -953,9 +957,10 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
 
         function getModelDescription(modelId) {
             const descriptions = {
-                'qwen2.5-7b-instruct': 'Text - Qwen 2.5 7B',
                 'qwen2.5-coder-14b-instruct': 'Code - Qwen 2.5 Coder 14B',
-                'qwen3-vl-8b': 'Vision - Qwen3 VL 8B (Computer Use)',
+                'qwen3-vl-8b': 'Vision - Qwen3-VL 8B',
+                'ui-tars-1.5-7b': 'Vision - UI-TARS 1.5 7B (Desktop Agent, vLLM bf16)',
+                'gemma-4-26b-a4b-it': 'Vision - Gemma 4 26B-A4B MoE (4B active)',
                 'qwen3-embedding-8b': 'Embeddings - Qwen3 8B (4096 dims)'
             };
             return descriptions[modelId] || 'LLM Model';
@@ -1164,14 +1169,15 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
         // maxTokens: each model's context-window limit (matches --ctx-size in its systemd unit).
         const MODEL_DEFAULTS = {
             'qwen2.5-coder-14b-instruct': { temperature: 0.1, maxTokens: 16384 },
-            'qwen2.5-7b-instruct':        { temperature: 0.7, maxTokens: 8192 },
-            'qwen3-vl-8b':                { temperature: 0.5, maxTokens: 32768 },
+            'qwen3-vl-8b':                { temperature: 0.5, maxTokens: 16384 },
+            'ui-tars-1.5-7b':             { temperature: 0.0, maxTokens: 16384 },
+            'gemma-4-26b-a4b-it':         { temperature: 0.7, maxTokens: 16384 },
         };
         const FALLBACK_DEFAULTS = { temperature: 0.7, maxTokens: 4096 };
 
         function onModelChange(e) {
             const modelId = e.target.value;
-            const isVision = modelId.includes('vl');
+            const isVision = modelId.includes('vl') || modelId.includes('ui-tars') || modelId.includes('gemma-4');
 
             const imageSection = document.getElementById('imageUploadSection');
             if (isVision) {
@@ -1291,8 +1297,15 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             }
 
             const sendButton = document.getElementById('sendButton');
-            sendButton.disabled = true;
-            sendButton.textContent = 'Sending...';
+            const controller = new AbortController();
+            activeAbortController = controller;
+            // Flip the Send button into a Stop button so a single click can halt the request.
+            const originalSendClasses = sendButton.className;
+            sendButton.className = 'px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition duration-200';
+            sendButton.textContent = 'Stop';
+            sendButton.removeEventListener('click', sendRequest);
+            const stopHandler = () => controller.abort();
+            sendButton.addEventListener('click', stopHandler);
 
             // Append the user turn to the conversation immediately so it shows up.
             const userMessage = selectedImageData
@@ -1332,28 +1345,38 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
                 };
 
                 if (stream) {
-                    await handleStreamingResponse(requestBody, assistantMessage);
+                    await handleStreamingResponse(requestBody, assistantMessage, controller.signal);
                 } else {
-                    await handleNonStreamingResponse(requestBody, assistantMessage);
+                    await handleNonStreamingResponse(requestBody, assistantMessage, controller.signal);
                 }
             } catch (error) {
-                assistantMessage.content = `**Error:** ${error.message}`;
+                if (error.name === 'AbortError') {
+                    // Preserve whatever streamed text already landed; just mark it stopped.
+                    const existing = assistantMessage.content || '';
+                    assistantMessage.content = existing + (existing ? '\n\n' : '') + '_[stopped]_';
+                } else {
+                    assistantMessage.content = `**Error:** ${error.message}`;
+                }
             } finally {
                 assistantMessage.streaming = false;
                 renderConversation();
-                sendButton.disabled = false;
+                sendButton.removeEventListener('click', stopHandler);
+                sendButton.addEventListener('click', sendRequest);
+                sendButton.className = originalSendClasses;
                 sendButton.textContent = 'Send';
+                if (activeAbortController === controller) activeAbortController = null;
             }
         }
 
-        async function handleNonStreamingResponse(requestBody, assistantMessage) {
+        async function handleNonStreamingResponse(requestBody, assistantMessage, signal) {
             const response = await fetch(`${API_BASE}/v1/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${API_KEY}`
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal
             });
 
             if (!response.ok) {
@@ -1371,14 +1394,15 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
             }
         }
 
-        async function handleStreamingResponse(requestBody, assistantMessage) {
+        async function handleStreamingResponse(requestBody, assistantMessage, signal) {
             const response = await fetch(`${API_BASE}/v1/chat/completions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${API_KEY}`
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal
             });
 
             if (!response.ok) {
@@ -1391,11 +1415,13 @@ print(f"Dimensions: {len(embeddings.data[0].embedding)}")</code></pre>
 
             let pendingRender = false;
             const scheduleRender = () => {
+                // Mirror text synchronously so an abort mid-stream doesn't drop the last delta;
+                // only throttle the DOM re-render via rAF.
+                assistantMessage.content = accumulatedText;
                 if (pendingRender) return;
                 pendingRender = true;
                 requestAnimationFrame(() => {
                     pendingRender = false;
-                    assistantMessage.content = accumulatedText;
                     renderConversation();
                 });
             };
